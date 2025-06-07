@@ -1,5 +1,7 @@
 # Plugins & Extensions API
 
+> Documentation for ScorpionJS v1.0.0
+
 ScorpionJS provides a powerful plugin system that lets you extend and customize the framework with new features, integrations, and behaviors. This document covers everything you need to know about plugins and extensions in ScorpionJS.
 
 ---
@@ -97,6 +99,80 @@ export default function monitoringPlugin(options = {}) {
 }
 ```
 
+### TypeScript Plugin Example
+
+```typescript
+import { Application, Plugin } from 'scorpionjs';
+
+// Define plugin options interface
+export interface LoggerOptions {
+  level?: 'debug' | 'info' | 'warn' | 'error';
+  prefix?: string;
+  timestamp?: boolean;
+}
+
+// Define the logger interface that will be attached to the app
+export interface Logger {
+  debug(message: string, ...args: any[]): void;
+  info(message: string, ...args: any[]): void;
+  warn(message: string, ...args: any[]): void;
+  error(message: string, ...args: any[]): void;
+}
+
+// Extend the Application type to include our logger
+declare module 'scorpionjs' {
+  interface Application {
+    logger: Logger;
+  }
+}
+
+// Create the plugin
+export default function loggerPlugin(options: LoggerOptions = {}): Plugin {
+  const {
+    level = 'info',
+    prefix = '',
+    timestamp = true
+  } = options;
+  
+  return function(app: Application) {
+    // Create the logger
+    const logger: Logger = {
+      debug(message: string, ...args: any[]) {
+        if (['debug'].includes(level)) {
+          console.debug(`${prefix}${timestamp ? new Date().toISOString() : ''} ${message}`, ...args);
+        }
+      },
+      info(message: string, ...args: any[]) {
+        if (['debug', 'info'].includes(level)) {
+          console.info(`${prefix}${timestamp ? new Date().toISOString() : ''} ${message}`, ...args);
+        }
+      },
+      warn(message: string, ...args: any[]) {
+        if (['debug', 'info', 'warn'].includes(level)) {
+          console.warn(`${prefix}${timestamp ? new Date().toISOString() : ''} ${message}`, ...args);
+        }
+      },
+      error(message: string, ...args: any[]) {
+        console.error(`${prefix}${timestamp ? new Date().toISOString() : ''} ${message}`, ...args);
+      }
+    };
+    
+    // Attach the logger to the app
+    app.logger = logger;
+    
+    // Log when the app starts
+    app.on('setup', () => {
+      logger.info('Application started');
+    });
+    
+    // Log when the app stops
+    app.on('teardown', () => {
+      logger.info('Application stopped');
+    });
+  };
+}
+```
+
 ---
 
 ## Advanced Plugin Development
@@ -154,6 +230,51 @@ export default function monitoringPlugin(options = {}) {
 - Add a `README.md` and document all options and usage.
 - Use `peerDependencies` for ScorpionJS.
 - Publish to npm with a clear name (e.g., `scorpionjs-authentication`).
+
+---
+
+## Troubleshooting Plugins
+
+### Common Plugin Issues
+
+| Issue | Possible Cause | Solution |
+|-------|---------------|----------|
+| Plugin not loading | Incorrect registration order | Make sure to register dependency plugins first |
+| Configuration errors | Missing or invalid options | Validate options and provide clear error messages |
+| Conflicts with other plugins | Multiple plugins modifying the same functionality | Use namespaced properties and check for existing functionality |
+| Memory leaks | Resources not being cleaned up | Implement proper teardown handlers |
+
+### Debugging Plugins
+
+```javascript
+// Add debug logging to your plugin
+export default function debuggablePlugin(options = {}) {
+  return function(app) {
+    const debug = options.debug || false;
+    
+    function log(...args) {
+      if (debug) console.log('[debuggablePlugin]', ...args);
+    }
+    
+    log('Plugin initialized with options:', options);
+    
+    // Plugin implementation
+    app.on('setup', () => {
+      log('App setup event triggered');
+    });
+  };
+}
+
+// Usage
+app.configure(debuggablePlugin({ debug: true }));
+```
+
+### Plugin Performance Considerations
+
+- Avoid expensive operations during plugin initialization
+- Use lazy loading for heavy dependencies
+- Consider the impact of your plugin on application startup time
+- Profile your plugin under load to identify bottlenecks
 
 ---
 

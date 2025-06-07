@@ -1,5 +1,7 @@
 # API Reference
 
+> Documentation for ScorpionJS v1.0.0
+
 This section provides a detailed reference for the ScorpionJS API, covering the application instance, services, hooks, transports, configuration, and more.
 
 ---
@@ -29,16 +31,16 @@ flowchart TD
 
 ### App (Application Instance)
 
-| Method/Property      | Type         | Description                                  |
-|----------------------|--------------|----------------------------------------------|
-| `service(path)`      | Function     | Get or register a service at the given path  |
-| `configure(plugin)`  | Function     | Register a plugin/configure function         |
-| `hooks(hooksObj)`    | Function     | Register global hooks                        |
-| `listen(port)`       | Function     | Start the server on the specified port       |
-| `get(path)`          | Function     | Get a configuration value                    |
-| `set(path, value)`   | Function     | Set a configuration value                    |
-| `on(event, handler)` | Function     | Listen to application-level events           |
-| `emit(event, data)`  | Function     | Emit an application-level event              |
+| Method/Property      | Type         | Returns      | Description                                  |
+|----------------------|--------------|-------------|----------------------------------------------|
+| `service(path, service?)` | Function | Service     | Get or register a service at the given path  |
+| `configure(plugin)`  | Function     | Application | Register a plugin/configure function         |
+| `hooks(hooksObj)`    | Function     | Application | Register global hooks                        |
+| `listen(port)`       | Function     | Promise<Server> | Start the server on the specified port    |
+| `get(path)`          | Function     | any         | Get a configuration value                    |
+| `set(path, value)`   | Function     | Application | Set a configuration value                    |
+| `on(event, handler)` | Function     | Application | Listen to application-level events           |
+| `emit(event, data)`  | Function     | boolean     | Emit an application-level event              |
 
 See: [Services API](./services.md), [Hooks API](./hooks.md), [Plugins & Extensions](./plugins.md), [Configuration API](./configuration.md)
 
@@ -46,17 +48,17 @@ See: [Services API](./services.md), [Hooks API](./hooks.md), [Plugins & Extensio
 
 ### Service
 
-| Method/Property      | Type         | Description                                  |
-|----------------------|--------------|----------------------------------------------|
-| `find(params)`       | Function     | Find multiple records                        |
-| `get(id, params)`    | Function     | Retrieve a single record by ID               |
-| `create(data, params)` | Function   | Create a new record                          |
-| `update(id, data, params)` | Function | Replace a record by ID                    |
-| `patch(id, data, params)` | Function  | Partially update a record by ID            |
-| `remove(id, params)` | Function     | Remove a record by ID                        |
-| `hooks(hooksObj)`    | Function     | Register hooks for this service              |
-| `on(event, handler)` | Function     | Listen to service events                     |
-| `emit(event, data)`  | Function     | Emit a service event                         |
+| Method/Property      | Type         | Returns      | Description                                  |
+|----------------------|--------------|-------------|----------------------------------------------|
+| `find(params)`       | Function     | Promise<any[]> | Find multiple records                     |
+| `get(id, params)`    | Function     | Promise<any> | Retrieve a single record by ID              |
+| `create(data, params)` | Function   | Promise<any> | Create a new record                         |
+| `update(id, data, params)` | Function | Promise<any> | Replace a record by ID                   |
+| `patch(id, data, params)` | Function  | Promise<any> | Partially update a record by ID           |
+| `remove(id, params)` | Function     | Promise<any> | Remove a record by ID                       |
+| `hooks(hooksObj)`    | Function     | Service     | Register hooks for this service             |
+| `on(event, handler)` | Function     | Service     | Listen to service events                    |
+| `emit(event, data)`  | Function     | boolean     | Emit a service event                        |
 
 See: [Services API](./services.md), [Hooks API](./hooks.md), [Events API](./events.md)
 
@@ -64,13 +66,13 @@ See: [Services API](./services.md), [Hooks API](./hooks.md), [Events API](./even
 
 ### Client
 
-| Method/Property      | Type         | Description                                  |
-|----------------------|--------------|----------------------------------------------|
-| `service(path)`      | Function     | Get a remote service                         |
-| `on(event, handler)` | Function     | Listen to client-level or service events      |
-| `emit(event, data)`  | Function     | Emit a client-level event                    |
-| `connect()`          | Function     | Connect to the server                        |
-| `disconnect()`       | Function     | Disconnect from the server                   |
+| Method/Property      | Type         | Returns      | Description                                  |
+|----------------------|--------------|-------------|----------------------------------------------|
+| `service(path)`      | Function     | Service     | Get a remote service                         |
+| `on(event, handler)` | Function     | Client      | Listen to client-level or service events      |
+| `emit(event, data)`  | Function     | boolean     | Emit a client-level event                    |
+| `connect()`          | Function     | Promise<Client> | Connect to the server                    |
+| `disconnect()`       | Function     | Promise<void> | Disconnect from the server                 |
 
 See: [Client API](./client.md), [Events API](./events.md)
 
@@ -88,6 +90,12 @@ See: [Client API](./client.md), [Events API](./events.md)
 - [Streams](#streams)
 - [Client](#client)
 - [Errors](#errors)
+- [TypeScript Support](./typescript.md)
+- [Performance Optimization](./performance.md)
+- [Security Best Practices](./security.md)
+- [Testing](./testing.md)
+- [Plugins & Extensions](./plugins.md)
+- [Contributing](./contributing.md)
 
 ## Application
 

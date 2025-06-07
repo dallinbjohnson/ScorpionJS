@@ -1,6 +1,22 @@
 # Error Handling in ScorpionJS
 
+> Documentation for ScorpionJS v1.0.0
+
 Robust error handling is essential for building reliable applications. ScorpionJS provides flexible mechanisms for catching, propagating, and responding to errors in services, hooks, plugins, and transports.
+
+---
+
+## Table of Contents
+- [Error Propagation](#error-propagation)
+- [Custom Error Classes](#custom-error-classes)
+- [Error Hooks](#error-hooks)
+- [Handling Errors in Services](#handling-errors-in-services)
+- [Handling Errors in Plugins](#handling-errors-in-plugins)
+- [Error Handling in Testing](#error-handling-in-testing)
+- [Debugging and Logging](#debugging-and-logging)
+- [Troubleshooting Common Errors](#troubleshooting-common-errors)
+- [Best Practices](#best-practices)
+- [Further Reading](#further-reading)
 
 ---
 
@@ -32,6 +48,42 @@ export default async function authenticate(context) {
     throw new NotAuthenticated();
   }
   return context;
+}
+```
+
+### TypeScript Support
+
+With TypeScript, you can create more robust error classes:
+
+```typescript
+// src/errors/AppError.ts
+export interface ErrorDetails {
+  code: number;
+  data?: Record<string, any>;
+}
+
+export class AppError extends Error {
+  code: number;
+  data?: Record<string, any>;
+
+  constructor(message: string, details: ErrorDetails) {
+    super(message);
+    this.name = this.constructor.name;
+    this.code = details.code;
+    this.data = details.data;
+    
+    // Maintains proper stack trace (only available on V8)
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
+  }
+}
+
+// Specific error types
+export class ValidationError extends AppError {
+  constructor(message = 'Validation failed', data?: Record<string, any>) {
+    super(message, { code: 400, data });
+  }
 }
 ```
 
@@ -120,8 +172,41 @@ it('throws on invalid input', async () => {
 
 ---
 
+## Troubleshooting Common Errors
+
+### Authentication Errors
+
+| Error | Possible Cause | Solution |
+|-------|---------------|----------|
+| `NotAuthenticated` | Missing or invalid JWT token | Check that you're including the token in the Authorization header |
+| `Forbidden` | User doesn't have required permissions | Verify user roles and permissions |
+
+### Database Errors
+
+| Error | Possible Cause | Solution |
+|-------|---------------|----------|
+| `ConnectionError` | Database connection failed | Check database credentials and network connectivity |
+| `DuplicateKey` | Unique constraint violation | Ensure the data doesn't conflict with existing records |
+
+### Transport Errors
+
+| Error | Possible Cause | Solution |
+|-------|---------------|----------|
+| `SocketTimeout` | WebSocket connection timed out | Check network stability and increase timeout settings |
+| `InvalidRequest` | Malformed request data | Validate request format before sending |
+
+### Performance Considerations
+
+When handling errors at scale:
+
+- Use error sampling for high-volume errors
+- Consider using a centralized error tracking service
+- Implement circuit breakers for failing dependencies (see [Fault Tolerance](./fault-tolerance.md))
+
 ## Further Reading
 - [Hooks API](./hooks.md)
 - [Testing](./testing.md)
 - [Plugins & Extensions](./plugins.md)
+- [Fault Tolerance](./fault-tolerance.md)
 - [Node.js Error Handling](https://nodejs.org/api/errors.html)
+- [Error Handling in Async/Await](https://javascript.info/async-await#error-handling)
