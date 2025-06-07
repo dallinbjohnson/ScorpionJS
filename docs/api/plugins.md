@@ -22,6 +22,20 @@ ScorpionJS provides a powerful plugin system that lets you extend and customize 
 
 ## Introduction: Plugins vs. Extensions
 
+---
+
+### Plugin Lifecycle Diagram
+
+```mermaid
+flowchart TD
+    A[App.configure(plugin)] --> B[Plugin Registration]
+    B --> C[Initialization]
+    C --> D[App Extended]
+    D --> E[Teardown (on app close)]
+```
+
+---
+
 - **Plugin:** A function that takes the app instance and registers features, services, hooks, or integrations. Plugins can add, modify, or remove framework capabilities.
 - **Extension:** (Optional term) Sometimes used for plugins that extend core classes or add new methods. In ScorpionJS, "plugin" and "extension" are often used interchangeably.
 

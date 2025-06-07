@@ -2,6 +2,21 @@
 
 ScorpionJS provides a powerful event system that allows services to communicate with each other through events. This document provides detailed API documentation for using events in ScorpionJS.
 
+---
+
+### Event Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant S as Service
+    participant T as Transport (REST/WebSocket)
+    participant C as Client
+    S->>T: emit('created', data)
+    T->>C: send('created', data)
+    C->>T: listen('created')
+```
+
+---
 ## Introduction to Events
 
 Events in ScorpionJS enable loose coupling between services, allowing them to react to changes without direct dependencies. The event system is built on top of Node.js's EventEmitter but extends it with additional features like distributed events across nodes.

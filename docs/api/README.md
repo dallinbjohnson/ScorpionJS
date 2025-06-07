@@ -1,6 +1,80 @@
 # API Reference
 
-This section provides detailed documentation for the ScorpionJS API.
+This section provides a detailed reference for the ScorpionJS API, covering the application instance, services, hooks, transports, configuration, and more.
+
+---
+
+## Core API Tables
+
+---
+
+### Architecture Overview
+
+```mermaid
+flowchart TD
+    A[App Instance] --> B[Services]
+    A --> C[Hooks]
+    A --> D[Plugins]
+    A --> E[Configuration]
+    B --> F[Events]
+    B --> G[Transports]
+    G --> H[Client]
+    D --> B
+    D --> C
+    D --> G
+    H -.-> B
+```
+
+---
+
+### App (Application Instance)
+
+| Method/Property      | Type         | Description                                  |
+|----------------------|--------------|----------------------------------------------|
+| `service(path)`      | Function     | Get or register a service at the given path  |
+| `configure(plugin)`  | Function     | Register a plugin/configure function         |
+| `hooks(hooksObj)`    | Function     | Register global hooks                        |
+| `listen(port)`       | Function     | Start the server on the specified port       |
+| `get(path)`          | Function     | Get a configuration value                    |
+| `set(path, value)`   | Function     | Set a configuration value                    |
+| `on(event, handler)` | Function     | Listen to application-level events           |
+| `emit(event, data)`  | Function     | Emit an application-level event              |
+
+See: [Services API](./services.md), [Hooks API](./hooks.md), [Plugins & Extensions](./plugins.md), [Configuration API](./configuration.md)
+
+---
+
+### Service
+
+| Method/Property      | Type         | Description                                  |
+|----------------------|--------------|----------------------------------------------|
+| `find(params)`       | Function     | Find multiple records                        |
+| `get(id, params)`    | Function     | Retrieve a single record by ID               |
+| `create(data, params)` | Function   | Create a new record                          |
+| `update(id, data, params)` | Function | Replace a record by ID                    |
+| `patch(id, data, params)` | Function  | Partially update a record by ID            |
+| `remove(id, params)` | Function     | Remove a record by ID                        |
+| `hooks(hooksObj)`    | Function     | Register hooks for this service              |
+| `on(event, handler)` | Function     | Listen to service events                     |
+| `emit(event, data)`  | Function     | Emit a service event                         |
+
+See: [Services API](./services.md), [Hooks API](./hooks.md), [Events API](./events.md)
+
+---
+
+### Client
+
+| Method/Property      | Type         | Description                                  |
+|----------------------|--------------|----------------------------------------------|
+| `service(path)`      | Function     | Get a remote service                         |
+| `on(event, handler)` | Function     | Listen to client-level or service events      |
+| `emit(event, data)`  | Function     | Emit a client-level event                    |
+| `connect()`          | Function     | Connect to the server                        |
+| `disconnect()`       | Function     | Disconnect from the server                   |
+
+See: [Client API](./client.md), [Events API](./events.md)
+
+---
 
 ## Table of Contents
 
