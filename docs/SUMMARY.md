@@ -35,6 +35,7 @@ Welcome to the ScorpionJS documentation! Use this index to navigate the framewor
 - [Job Queues & Task Scheduling](./api/job-queues.md)
 - [Observability](./api/observability.md)
 - [Internationalization (i18n)](./api/internationalization.md)
+- [Code Sandboxing](./api/code-sandboxing.md)
 
 ## Advanced Topics
 - [Testing](./api/testing.md)
