@@ -36,6 +36,7 @@ Welcome to the ScorpionJS documentation! Use this index to navigate the framewor
 - [Observability](./api/observability.md)
 - [Internationalization (i18n)](./api/internationalization.md)
 - [Code Sandboxing](./api/code-sandboxing.md)
+- [Router API](./api/router.md)
 
 ## Advanced Topics
 - [Testing](./api/testing.md)

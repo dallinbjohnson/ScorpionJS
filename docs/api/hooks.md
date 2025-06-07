@@ -1,6 +1,6 @@
 # Hooks API
 
-Hooks are middleware functions that can be registered before, after, or around service method calls. This document provides detailed API documentation for working with hooks in ScorpionJS.
+Hooks are middleware functions that can be registered before, after, or around service method calls. They are a cornerstone of ScorpionJS's flexibility, allowing you to compose custom request processing and response handling logic. A key design goal is that **hooks operate transparently and consistently, regardless of whether the service method is invoked via REST, WebSockets, or involves data streaming (including JSON streaming like NDJSON)**. The `context` object passed to hooks aims to abstract these underlying transport details.
 
 ## Hook Types
 
@@ -138,9 +138,26 @@ app.hooks('POST:/api/payments/*', {
 });
 ```
 
+## Hook Execution Order
+
+Hooks are executed in a specific sequence, providing a predictable flow for request processing and error handling:
+
+1.  **Global `before` hooks**: Run for all services or matching methods.
+2.  **Service-specific `before` hooks**: Run for the targeted service and method.
+3.  **`around` hooks (first part)**: The portion of `around` hooks (global then service-specific) before `await next()` is executed.
+4.  **Service Method**: The actual service method (e.g., `find`, `create`, custom method) is called.
+5.  **`around` hooks (second part)**: The portion of `around` hooks (service-specific then global, in reverse order of the first part) after `await next()` is executed.
+6.  **Service-specific `after` hooks**: Run if the method execution was successful.
+7.  **Global `after` hooks**: Run if the method execution was successful, after service-specific `after` hooks. The `app.hooks({ after: { all: [...] } })` configuration is the standard way to implement global hooks that run after all service-specific logic for any successful method call.
+8.  **`error` hooks (Service-specific then Global)**: If any preceding step (from service `before` hooks through `after` hooks) throws an error, the respective `error` hooks are triggered, starting with service-specific ones, then global ones. `around` hooks can also catch errors via their `try...catch` blocks.
+
+This order ensures that global concerns can wrap service-specific logic, and errors can be handled at appropriate levels.
+
 ## Hook Context
 
-The hook context object contains information about the current request and is passed to all hooks.
+The hook context object (`context`) contains information about the current service method call and is passed to all hooks. It's designed to provide a **unified interface to the request and response, abstracting the specifics of the transport layer (HTTP, WebSockets) and interaction model (simple request-response, streaming)**. Hooks can dynamically alter their behavior or modify the `context` object (e.g., `context.data`, `context.params`, `context.result`) based on the incoming data, query parameters, or user information, enabling highly customizable and data-driven request processing pipelines.
+
+For example, whether a `find` method's results are returned as a complete JSON array or streamed as NDJSON, an `after` hook would still typically find the results (or a representation/metadata of the stream) in `context.result`.
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -154,6 +171,15 @@ The hook context object contains information about the current request and is pa
 | `data` | Object | The request data (for create, update, patch) |
 | `result` | Any | The result (in after hooks) |
 | `error` | Error | The error (in error hooks) |
+| `params.stream` or `context.stream` | ReadableStream | (Conceptual) If the request involves a stream (e.g., file upload), it might be exposed here. Hooks could interact with stream metadata or, cautiously, the stream itself. |
+
+Hooks can also interact with streaming data. For example, if a service method consumes or produces a stream (see [Services API - Working with Streams](./services.md#working-with-streams)), hooks might:
+
+*   **Before Hooks**: Access or modify stream metadata passed in `context.params` (e.g., `context.params.fileName`, `context.params.contentType`) before the stream is processed by the service method.
+*   **After Hooks**: Access or modify metadata about a stream that was produced by a service method, perhaps stored in `context.result.metadata`.
+*   **Error Hooks**: Perform cleanup if an error occurs during stream processing.
+
+Directly manipulating the stream data within a hook (e.g., transforming, buffering) should be done with caution to avoid performance issues and to ensure that the stream remains viable for the service method or the client. It's often better to handle complex stream transformations within the service method itself or dedicated stream processing utilities.
 
 ## Hook Functions
 
@@ -212,7 +238,11 @@ async function authenticate(context) {
 }
 ```
 
-### Validation
+### Data Validation (Schema-Driven)
+
+Leverage hooks for robust data validation using your preferred schema library (e.g., TypeBox, Zod, JSON Schema). This is a critical point for ensuring data integrity for incoming `data` (on `create`, `update`, `patch`), `params.query`, or even custom properties on the `context`. For more details on defining and using schemas, refer to the [Schema Validation API](./schema-validation.md).
+
+**Example:**
 
 ```javascript
 async function validateData(schema) {
