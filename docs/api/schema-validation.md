@@ -4,6 +4,12 @@ ScorpionJS provides built-in schema validation using JSON Schema and TypeScript.
 
 ## JSON Schema Validation
 
+Validation is most commonly performed in hooks. See [Hooks API](./hooks.md) for how to use validation hooks.
+
+Reusable validation logic can be shared via plugins. See [Plugins & Extensions](./plugins.md).
+
+Validation options can be set globally or per-service. See [Configuration API](./configuration.md) for details.
+
 ### Basic Schema Configuration
 
 ```javascript

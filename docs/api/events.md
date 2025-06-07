@@ -57,7 +57,7 @@ app.on('*', (eventName, data) => {
 
 ## Standard Service Events
 
-ScorpionJS services automatically emit events for standard methods:
+ScorpionJS services automatically emit events for standard methods. See [Services API](./services.md) for more details.
 
 | Method | Event | Data |
 |--------|-------|------|

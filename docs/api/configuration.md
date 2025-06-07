@@ -346,7 +346,7 @@ app.hooks({
 
 ## Configuration Plugins
 
-ScorpionJS supports configuration plugins:
+ScorpionJS supports configuration plugins. See [Plugins & Extensions](./plugins.md) for details.
 
 ```javascript
 import { createApp } from 'scorpionjs';
