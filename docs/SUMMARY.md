@@ -12,6 +12,10 @@ Welcome to the ScorpionJS documentation! Use this index to navigate the framewor
 
 ## Guides
 - [Getting Started & Guides](./guides/README.md)
+- [CLI Tool](./guides/cli.md)
+- [Server-Side Rendering (SSR) & SSG](./guides/ssr-ssg.md)
+- [Database & ORM Integration](./guides/database-orm.md)
+- [Admin Dashboard](./guides/admin-ui.md)
 
 ## API Reference
 - [API Overview](./api/README.md)
@@ -26,6 +30,11 @@ Welcome to the ScorpionJS documentation! Use this index to navigate the framewor
 - [Events API](./api/events.md)
 - [Client API](./api/client.md)
 - [Plugins & Extensions](./api/plugins.md)
+- [GraphQL API](./api/graphql.md)
+- [Advanced Caching](./api/caching-advanced.md)
+- [Job Queues & Task Scheduling](./api/job-queues.md)
+- [Observability](./api/observability.md)
+- [Internationalization (i18n)](./api/internationalization.md)
 
 ## Advanced Topics
 - [Testing](./api/testing.md)
@@ -33,6 +42,7 @@ Welcome to the ScorpionJS documentation! Use this index to navigate the framewor
 - [Security](./api/security.md)
 - [Deployment](./api/deployment.md)
 - [Migration Guide](./api/migration.md)
+- [WebAssembly (Wasm)](./api/wasm.md)
 
 ## Community & Contribution
 - [Contributing](./api/contributing.md)
