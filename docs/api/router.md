@@ -131,26 +131,124 @@ Service events (created, updated, patched, removed, and custom events) are also 
 
 ### Nested Routes
 
-ScorpionJS supports nested routes, allowing you to model hierarchical relationships in your API (e.g., `/users/:userId/posts/:postId`). This is typically achieved by how services are registered and how their paths are interpreted.
+ScorpionJS supports nested routes, enabling you to model hierarchical relationships in your API (e.g., `/users/:userId/posts/:postId`). This is achieved by registering services with paths that reflect the desired nested structure. Parameters from parent routes are automatically made available to the methods of nested services.
 
-**Conceptual Example:**
+**Example: User Posts**
 
-If you have a `posts` service that should be nested under `users`, you might register it with a path that reflects this structure, or the framework might provide specific options for nesting.
+Consider a scenario where you want to manage posts belonging to specific users. You would have a `users` service and a `posts` service nested under it.
+
+**1. Service Definitions (Conceptual)**
+
+First, define your services. The `PostsService` will need access to `userId` from the parent route.
 
 ```javascript
-// Conceptual: Registering a 'posts' service nested under 'users'
-// The exact API for this might vary (e.g., path convention or specific nesting options)
-app.service('users/:userId/posts', new PostsService());
+// services/users.js (Simplified)
+class UsersService {
+  async get(id, params) {
+    // Logic to fetch user by id
+    console.log(`Fetching user ${id}`);
+    return { id, name: `User ${id}`, email: `user${id}@example.com` };
+  }
+  // ... other standard methods (find, create, update, patch, remove)
+}
+
+// services/posts.js (Simplified)
+class PostsService {
+  async find(params) {
+    const userId = params.route.userId; // Access userId from the parent route
+    console.log(`Fetching posts for user ${userId} with query:`, params.query);
+    // Logic to fetch posts for the user
+    return [
+      { id: 'post1', userId, title: 'First Post', content: '...' },
+      { id: 'post2', userId, title: 'Second Post', content: '...' }
+    ];
+  }
+
+  async get(id, params) {
+    const userId = params.route.userId;
+    console.log(`Fetching post ${id} for user ${userId}`);
+    // Logic to fetch a specific post by id for the user
+    return { id, userId, title: `Post ${id} Details`, content: '...' };
+  }
+
+  async create(data, params) {
+    const userId = params.route.userId;
+    console.log(`Creating post for user ${userId} with data:`, data);
+    // Logic to create a new post for the user
+    return { id: 'newPostId', userId, ...data };
+  }
+
+  // ... other standard methods (update, patch, remove) and custom methods
+}
 ```
 
-This would then allow routes like:
-*   `GET /users/123/posts` (calls `postsService.find({ query: { userId: '123' }, ... })`)
-*   `GET /users/123/posts/abc` (calls `postsService.get('abc', { query: { userId: '123' }, ... })`)
-*   `POST /users/123/posts` (calls `postsService.create(data, { query: { userId: '123' }, ... })`)
+**2. Service Registration**
 
-The `userId` from the parent path segment would typically be made available in `params.routeParams` or automatically added to `params.query` for the nested service methods, allowing them to filter or associate data correctly.
+Register the services with the application. The path for the `PostsService` includes the parent route parameter `:userId`.
 
-Clear documentation from ScorpionJS on its specific conventions or API for defining and handling nested services and routes is essential.
+```javascript
+// app.js or similar setup file
+const app = new Scorpion(); // Assuming Scorpion is your app instance
+
+app.service('users', new UsersService());
+// Register PostsService nested under users, using the :userId parameter from the parent path
+app.service('users/:userId/posts', new PostsService());
+
+// The router will now handle routes like:
+// /users/:userId
+// /users/:userId/posts
+// /users/:userId/posts/:postId
+```
+
+**3. Accessing Parent Route Parameters**
+
+When a request comes in for a nested route like `/users/123/posts/abc`, the `PostsService` methods will receive `params.route.userId` with the value `'123'`. The `id` parameter for `get`, `update`, `patch`, or `remove` methods will be `'abc'`.
+
+```javascript
+// Inside PostsService.get(id, params):
+// id will be 'abc'
+// params.route.userId will be '123'
+```
+
+**4. Example Usage**
+
+**HTTP Requests:**
+
+*   `GET /users/123/posts`: Calls `postsService.find({ query: {}, route: { userId: '123' } })`.
+*   `GET /users/123/posts?published=true`: Calls `postsService.find({ query: { published: 'true' }, route: { userId: '123' } })`.
+*   `GET /users/123/posts/abc`: Calls `postsService.get('abc', { route: { userId: '123' } })`.
+*   `POST /users/123/posts` with JSON body `{ "title": "My New Post" }`: Calls `postsService.create({ title: "My New Post" }, { route: { userId: '123' } })`.
+
+**WebSocket Messages:**
+
+*   To list all posts for user `123`:
+    ```json
+    {
+      "type": "call",
+      "path": "users/123/posts",
+      "method": "find"
+    }
+    ```
+*   To get post `abc` for user `123`:
+    ```json
+    {
+      "type": "call",
+      "path": "users/123/posts",
+      "method": "get",
+      "id": "abc"
+    }
+    ```
+*   To create a new post for user `123`:
+    ```json
+    {
+      "type": "call",
+      "path": "users/123/posts",
+      "method": "create",
+      "data": { "title": "Another Post", "content": "Content here." }
+    }
+    ```
+
+This approach ensures that nested resources are managed logically within their parent context, and the routing parameters are seamlessly passed down.
 
 ### Stream Handling
 
