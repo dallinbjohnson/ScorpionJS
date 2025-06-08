@@ -85,6 +85,96 @@ app.service('payments').methods({
 });
 ```
 
+### Streaming with REST
+
+The REST transport supports streaming responses from service methods, which is essential for handling large datasets or files efficiently.
+
+**1. JSON Streaming (NDJSON)**
+
+When a service method is expected to return a list of items (e.g., from a `find` method) and the client requests a streaming format, ScorpionJS can send the response as an [NDJSON (Newline Delimited JSON)](http://ndjson.org/) stream. This allows the client to process each JSON object as it arrives, rather than waiting for the entire list to be serialized.
+
+*   **Service Method Example:**
+    Assume a `messages` service whose `find` method can return a large number of messages. The service method itself might return an array or a stream; the framework then adapts based on the request context.
+
+    ```javascript
+    // services/messages.js
+    class MessagesService {
+      async find(params) {
+        // Simulate fetching many messages
+        const messages = [];
+        for (let i = 0; i < 1000; i++) {
+          messages.push({ id: i, text: `Message ${i}` });
+        }
+        // The framework will handle streaming this array as NDJSON
+        // if the 'Accept: application/x-ndjson' header is present.
+        return messages;
+      }
+    }
+    ```
+
+*   **Client Request & Response:**
+    *   If the client sends `Accept: application/x-ndjson`:
+        ```bash
+        curl -H "Accept: application/x-ndjson" http://localhost:3000/messages
+        ```
+        The response body would be (Content-Type: application/x-ndjson):
+        ```
+        {"id":0,"text":"Message 0"}
+        {"id":1,"text":"Message 1"}
+        ...
+        {"id":999,"text":"Message 999"}
+        ```
+        (Each JSON object on a new line)
+
+    *   If the client sends `Accept: application/json` (or no specific `Accept` header implying JSON):
+        ScorpionJS would typically send a standard JSON array (Content-Type: application/json).
+        ```bash
+        curl -H "Accept: application/json" http://localhost:3000/messages
+        ```
+        The response body would be:
+        ```json
+        [
+          {"id":0,"text":"Message 0"},
+          {"id":1,"text":"Message 1"},
+          ...
+          {"id":999,"text":"Message 999"}
+        ]
+        ```
+
+**2. File Streaming**
+
+Service methods can stream files directly to the client. This is useful for serving downloads without loading the entire file into memory.
+
+*   **Service Method Example:**
+    ```javascript
+    // services/files.js
+    import fs from 'node:fs';
+    import path from 'node:path';
+
+    class FilesService {
+      // Assuming 'id' is the filename, passed via route e.g., /files/:id
+      async get(id, params) { 
+        const filePath = path.join(__dirname, 'public', id); // Important: Sanitize and validate 'id' to prevent directory traversal
+        if (!fs.existsSync(filePath)) {
+          // throw new NotFound('File not found'); // Use appropriate error class
+          throw new Error('File not found');
+        }
+        // The service returns a ReadableStream.
+        // The framework should set appropriate headers like Content-Type and Content-Disposition.
+        // Optionally, the service can provide metadata via params:
+        // params.streamMetadata = { contentType: 'application/pdf', fileName: id };
+        return fs.createReadStream(filePath);
+      }
+    }
+    ```
+
+*   **Client Request:**
+    ```bash
+    curl http://localhost:3000/files/report.pdf -o report.pdf
+    ```
+    The REST transport pipes the `ReadableStream` from the service method to the HTTP response, using chunked transfer encoding. The framework should ideally infer `Content-Type` (e.g., from file extension or `params.streamMetadata`) and can set `Content-Disposition: attachment; filename="report.pdf"` to suggest a download.
+
+
 ## Socket Transport
 
 The Socket transport provides real-time communication using WebSockets.
@@ -125,6 +215,102 @@ When a service method modifies data, ScorpionJS automatically emits events that 
 | `update` | `serviceName updated` | The updated resource |
 | `patch` | `serviceName patched` | The patched resource |
 | `remove` | `serviceName removed` | The removed resource |
+
+### Streaming with Sockets
+
+The Socket transport also supports streaming, enabling real-time data flows for large datasets or continuous updates without overwhelming the client or server with large single messages. This aligns with the ScorpionJS principle of universal accessibility for service methods.
+
+**1. JSON Streaming (NDJSON-like over Sockets)**
+
+When a service method returns a stream of JSON objects (or an array that the framework decides to stream), the Socket transport can send each object as a separate WebSocket message or as part of an identified sequence.
+
+*   **Service Method Example:**
+    (Using a similar `MessagesService.find` method as in the REST example)
+
+    ```javascript
+    // services/messages.js
+    class MessagesService {
+      async find(params) {
+        const messages = [];
+        for (let i = 0; i < 100; i++) { messages.push({ id: i, text: `Message ${i}` }); }
+        // If params.stream is indicated in the WebSocket call, the framework
+        // can iterate over this array and send each item as a separate message.
+        // Alternatively, if the service method returns a Readable object stream,
+        // the framework would pipe it similarly.
+        return messages;
+      }
+    }
+    ```
+
+*   **Socket Interaction (Conceptual):**
+    The client initiates a call, potentially indicating a preference for streaming. The server then sends multiple messages in response.
+
+    **Client-side Request:**
+    ```json
+    // Client sends a 'call' message, possibly with a streaming hint
+    {
+      "type": "call",
+      "path": "messages",
+      "method": "find",
+      "requestId": "reqStream123", // Unique ID for the request
+      "params": { "query": { "live": true }, "stream": true } // Optional: 'stream: true' hint
+    }
+    ```
+
+    **Server-side Responses (Example Sequence):**
+    The server might send a series of data messages followed by an end-of-stream marker, all correlated by `requestId`.
+    ```json
+    // Message 1
+    { "type": "stream_data", "requestId": "reqStream123", "data": {"id":0,"text":"Message 0"} }
+    // Message 2
+    { "type": "stream_data", "requestId": "reqStream123", "data": {"id":1,"text":"Message 1"} }
+    // ... more data messages
+    // Final Message
+    { "type": "stream_end", "requestId": "reqStream123" }
+    ```
+    The exact message `type` values (`stream_data`, `stream_end`) and the mechanism for enabling streaming would be defined by ScorpionJS's WebSocket protocol. The client library would then reassemble these into a stream-like interface.
+
+**2. File Streaming**
+
+Streaming files over WebSockets involves breaking the file into chunks (typically binary) and sending them as sequential messages. Metadata about the file (name, type, size) might be sent first.
+
+*   **Service Method Example:**
+    (Using the same `FilesService.get` method that returns a `ReadableStream`)
+    ```javascript
+    // services/files.js
+    // ... (as in the REST example, returns fs.createReadStream(filePath))
+    ```
+
+*   **Socket Interaction (Conceptual):**
+
+    **Client-side Request:**
+    ```json
+    {
+      "type": "call",
+      "path": "files", // Or the specific service path for file downloads
+      "method": "get",
+      "id": "report.pdf", // File identifier
+      "requestId": "fileReq456"
+    }
+    ```
+
+    **Server-side Responses (Example Sequence):**
+    1.  (Optional) Metadata message:
+        ```json
+        {
+          "type": "file_metadata",
+          "requestId": "fileReq456",
+          "data": { "name": "report.pdf", "type": "application/pdf", "size": 1234567 }
+        }
+        ```
+    2.  Series of binary WebSocket messages containing file chunks.
+        *(Each message is a raw binary payload representing a chunk of the file)*
+
+    3.  End-of-stream message:
+        ```json
+        { "type": "file_end", "requestId": "fileReq456" }
+        ```
+    The client would listen for these messages, collect the binary chunks, and reassemble them into the complete file once the `file_end` message is received, potentially using the information from `file_metadata`.
 
 ## Multi-Runtime Support
 
