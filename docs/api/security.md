@@ -23,10 +23,10 @@ See: [Plugins & Extensions](./plugins.md), [Hooks API](./hooks.md)
 
 ## Rate Limiting & Brute-force Protection
 - Implement rate limiting on authentication and sensitive endpoints.
-- Use plugins like `express-rate-limit` or custom middleware.
+- Use plugins or custom middleware.
 
 ```javascript
-import rateLimit from 'express-rate-limit';
+import rateLimit from 'rate-limit';
 app.configure(rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100
