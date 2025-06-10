@@ -633,8 +633,8 @@ public async executeServiceCall<Svc extends Service<this>>(
     serviceHooks as unknown as HookObject<this, Svc>[]
   );
   
-  // If the call was successful and it's a standard method, emit an event
-  if (!finalContext.error) {
+  // If the call was successful, emit an event
+  if (!finalContext.error && finalContext.result) {
     const standardMethodEvents: Record<string, string> = {
       'create': 'created',
       'update': 'updated',
@@ -642,25 +642,32 @@ public async executeServiceCall<Svc extends Service<this>>(
       'remove': 'removed'
     };
     
-    const eventName = standardMethodEvents[method as string];
-    if (eventName && finalContext.result) {
-      // Create event context
-      const eventContext = {
-        service: serviceInstance,
-        method: method as string,
-        path: servicePath,
-        result: finalContext.result,
-        params: finalContext.params
-      };
-      
-      // For standard methods, ensure the event data includes all the expected fields
-      // This is especially important for create, update, and patch methods where data is provided
-      let eventData = finalContext.result;
-      
-      // Emit event on the service
-      if (typeof (serviceInstance as any).emit === 'function') {
-        (serviceInstance as any).emit(eventName, eventData, eventContext);
-      }
+    // Create event context
+    const eventContext = {
+      service: serviceInstance,
+      method: method as string,
+      path: servicePath,
+      result: finalContext.result,
+      params: finalContext.params
+    };
+    
+    // For standard methods, use the predefined event name
+    const standardEventName = standardMethodEvents[method as string];
+    
+    // For custom methods, use the method name with 'ed' suffix as event name if it's a string
+    // Otherwise, don't generate an automatic event name
+    const customEventName = typeof method === 'string' ? `${method}ed` : undefined;
+    
+    // Determine which event name to use
+    const eventName = standardEventName || customEventName;
+    
+    // The event data is the result of the method call
+    const eventData = finalContext.result;
+    
+    // Emit event on the service if it has an emit method
+    if (typeof (serviceInstance as any).emit === 'function' && eventName) {
+      console.log(`Emitting event: ${eventName}`);
+      (serviceInstance as any).emit(eventName, eventData, eventContext);
     }
   }
   

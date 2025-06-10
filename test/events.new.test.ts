@@ -201,7 +201,7 @@ describe('Event System', () => {
   });
   
   describe('Custom Events', () => {
-    it('should allow services to emit custom events', async () => {
+    it('should allow services to manually emit custom events', async () => {
       const app = createApp();
       
       // Create a service with a custom method
@@ -248,12 +248,55 @@ describe('Event System', () => {
       expect(result.result).to.have.property('amount');
       
       // Verify the event data - checking only the transaction ID and status
+      expect(eventData).to.not.be.null;
       expect(eventData).to.include({
         transactionId: 'tx123',
         status: 'completed'
       });
       // Check that amount exists but don't verify its exact value
       expect(eventData).to.have.property('amount');
+    });
+    
+    it('should support events for custom methods', async () => {
+      const app = createApp();
+      
+      // Create a service with a custom method
+      const service = createTestService({
+        async customMethod(data: any) {
+          // Custom method with manual event emission
+          const result = { processed: true, data };
+          
+          // Manually emit an event
+          if (typeof this.emit === 'function') {
+            this.emit('customEvent', result);
+          }
+          
+          return result;
+        }
+      });
+      
+      // Register the service with the app
+      app.service('test-events', service as any);
+      
+      // Track if we received the event
+      let eventReceived = false;
+      
+      // Set up the event listener
+      if (service.on) {
+        service.on('customEvent', () => {
+          eventReceived = true;
+        });
+      }
+      
+      // Call the custom method
+      await app.executeServiceCall({
+        servicePath: 'test-events',
+        method: 'customMethod',
+        data: { test: true }
+      });
+      
+      // Verify that the event was received
+      expect(eventReceived).to.be.true;
     });
     
     it('should allow listening to events at the app level', async () => {
