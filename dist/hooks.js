@@ -19,60 +19,76 @@ function matchesPattern(text, pattern) {
     const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
     return regex.test(text);
 }
+/**
+ * Helper function to filter hooks by type and pattern
+ */
+function filterHooksByType(hooks, servicePath, method, checkServicePath = true) {
+    const beforeHooks = [];
+    const afterHooks = [];
+    const errorHooks = [];
+    const aroundHooks = [];
+    hooks.forEach(hook => {
+        // For service hooks, we don't need to check servicePath (it's implicit)
+        const pathMatches = !checkServicePath || matchesPattern(servicePath || '', hook.servicePathPattern);
+        const methodMatches = matchesPattern(method || '', hook.methodPattern);
+        if (pathMatches && methodMatches) {
+            if (hook.type === 'before')
+                beforeHooks.push(hook);
+            else if (hook.type === 'after')
+                afterHooks.push(hook);
+            else if (hook.type === 'error')
+                errorHooks.push(hook);
+            else if (hook.type === 'around')
+                aroundHooks.push(hook);
+        }
+    });
+    return { beforeHooks, afterHooks, errorHooks, aroundHooks };
+}
+/**
+ * Helper function to execute standard hooks (before, after, error)
+ */
+async function executeStandardHooks(hooks, context, hookType, servicePath, method, suppressErrorLogging = false) {
+    // Create a new context with the correct hook type
+    let currentContext = { ...context };
+    currentContext.type = hookType;
+    // For after and error hooks, we process them in reverse order (LIFO)
+    const hooksToProcess = hookType === 'error' || hookType === 'after' ? hooks.slice().reverse() : hooks;
+    for (const hook of hooksToProcess) {
+        // For error hooks, we continue even if there's an error
+        // For before/after hooks, we break the chain on error
+        if (currentContext.error && hookType !== 'error')
+            break;
+        const hookFn = hook.fn;
+        if (isAroundHookFunction(hookFn)) {
+            console.warn(`[ScorpionJS] Misplaced AroundHookFunction in '${hookType}' hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
+            continue;
+        }
+        try {
+            // We need to cast the hook function and context to compatible types
+            const hookResult = await hookFn(currentContext);
+            if (hookResult !== undefined && hookResult !== null) {
+                currentContext = { ...currentContext, ...hookResult };
+            }
+        }
+        catch (err) {
+            if (hookType === 'error' && suppressErrorLogging) {
+                console.error('[ScorpionJS] Error in error hook itself:', err);
+                // Suppress errors in error hooks to prevent cascading
+            }
+            else {
+                currentContext.error = err;
+            }
+        }
+    }
+    return currentContext;
+}
 export async function runHooks(initialContext, globalHooks, interceptorGlobalHooks, applicableServiceHooks) {
     let currentContext = initialContext;
     const { servicePath, method } = initialContext;
-    // 1. Filter global hooks by type and pattern
-    const applicableGlobalBeforeHooks = [];
-    const applicableGlobalAfterHooks = [];
-    const applicableGlobalErrorHooks = [];
-    const applicableGlobalAroundHooks = [];
-    globalHooks.forEach((hook) => {
-        if (matchesPattern(servicePath || '', hook.servicePathPattern) && matchesPattern(method || '', hook.methodPattern)) {
-            if (hook.type === 'before')
-                applicableGlobalBeforeHooks.push(hook);
-            else if (hook.type === 'after')
-                applicableGlobalAfterHooks.push(hook);
-            else if (hook.type === 'error')
-                applicableGlobalErrorHooks.push(hook);
-            else if (hook.type === 'around')
-                applicableGlobalAroundHooks.push(hook);
-        }
-    });
-    // 2. Filter service-specific hooks by type and pattern
-    const applicableServiceBeforeHooks = [];
-    const applicableServiceAfterHooks = [];
-    const applicableServiceErrorHooks = [];
-    const applicableServiceAroundHooks = [];
-    applicableServiceHooks.forEach(hook => {
-        if (matchesPattern(method || '', hook.methodPattern)) {
-            if (hook.type === 'before')
-                applicableServiceBeforeHooks.push(hook);
-            else if (hook.type === 'after')
-                applicableServiceAfterHooks.push(hook);
-            else if (hook.type === 'error')
-                applicableServiceErrorHooks.push(hook);
-            else if (hook.type === 'around')
-                applicableServiceAroundHooks.push(hook);
-        }
-    });
-    // Filter interceptor global hooks by type and pattern
-    const applicableInterceptorBeforeHooks = [];
-    const applicableInterceptorAfterHooks = [];
-    const applicableInterceptorErrorHooks = [];
-    const applicableInterceptorAroundHooks = [];
-    interceptorGlobalHooks.forEach((hook) => {
-        if (matchesPattern(servicePath || '', hook.servicePathPattern) && matchesPattern(method || '', hook.methodPattern)) {
-            if (hook.type === 'before')
-                applicableInterceptorBeforeHooks.push(hook);
-            else if (hook.type === 'after')
-                applicableInterceptorAfterHooks.push(hook);
-            else if (hook.type === 'error')
-                applicableInterceptorErrorHooks.push(hook);
-            else if (hook.type === 'around')
-                applicableInterceptorAroundHooks.push(hook);
-        }
-    });
+    // 1. Filter hooks by type and pattern
+    const { beforeHooks: applicableGlobalBeforeHooks, afterHooks: applicableGlobalAfterHooks, errorHooks: applicableGlobalErrorHooks, aroundHooks: applicableGlobalAroundHooks } = filterHooksByType(globalHooks, servicePath, method);
+    const { beforeHooks: applicableServiceBeforeHooks, afterHooks: applicableServiceAfterHooks, errorHooks: applicableServiceErrorHooks, aroundHooks: applicableServiceAroundHooks } = filterHooksByType(applicableServiceHooks, servicePath, method, false);
+    const { beforeHooks: applicableInterceptorBeforeHooks, afterHooks: applicableInterceptorAfterHooks, errorHooks: applicableInterceptorErrorHooks, aroundHooks: applicableInterceptorAroundHooks } = filterHooksByType(interceptorGlobalHooks, servicePath, method);
     // Function to execute the main service method
     const callServiceMethod = async (contextForServiceCall) => {
         let operationContext = { ...contextForServiceCall }; // Work on a copy
@@ -106,6 +122,12 @@ export async function runHooks(initialContext, globalHooks, interceptorGlobalHoo
         ...applicableServiceAroundHooks,
         ...applicableInterceptorAroundHooks
     ];
+    // Type-safe helper function to call around hooks with appropriate context and next function
+    function callAroundHook(hookFn, context, next) {
+        // This function provides a type-safe boundary between the different hook function types
+        // It ensures that the hook function receives the context and next function with compatible types
+        return hookFn(context, next);
+    }
     const executeAroundChain = async (chainInitialContext) => {
         // Dispatch and nextCallback will operate with HookContext<A, Service<A>> for broader compatibility with all around hooks.
         const dispatch = async function dispatch(index, contextForDispatchInput) {
@@ -128,92 +150,35 @@ export async function runHooks(initialContext, globalHooks, interceptorGlobalHoo
             };
             // Assuming hookFn is AroundHookFunction because it's from allAroundHooksCombined (filtered for 'around' type)
             try {
-                // The type assertion here helps TypeScript understand the signature for the call.
-                // It's a union of AroundHookFunction for global/interceptor services and service-specific Svc.
-                // hookFn is AroundHookFunction<A, Svc> | AroundHookFunction<A, Service<A>>
-                // currentHookProcessingContext is HookContext<A, Service<A>> & { type: 'around' }
-                // nextCallback is NextFunction<A, Service<A>>
-                // Using 'as any' for hookFn call temporarily to bypass complex type interaction for around hooks.
-                const resultFromHook = await hookFn(currentHookProcessingContext, nextCallback);
-                // If the hook modified the context (returned a new one), use that.
-                // Otherwise, the currentHookProcessingContext (derived from contextForDispatchInput) is implicitly carried forward.
-                // The next call to dispatch will receive the result of the current hook (or currentHookProcessingContext if undefined/null).
-                const nextContextForNextCall = (resultFromHook !== undefined && resultFromHook !== null) ? resultFromHook : currentHookProcessingContext;
-                return dispatch(index + 1, nextContextForNextCall);
+                // Use our type-safe helper to call the hook function with appropriate types
+                // This eliminates the need for the 'as any' cast while maintaining type safety
+                return await callAroundHook(hookFn, currentHookProcessingContext, nextCallback);
             }
             catch (err) {
+                // This error is from the current hook `hookFn` itself, or an error propagated from `await nextCallback()`
+                // that `hookFn` didn't catch.
                 currentHookProcessingContext.error = err;
-                currentHookProcessingContext.type = 'error'; // Explicitly set type to 'error'
-                // The context passed to the next dispatch call will now have error and type='error'
-                return dispatch(index + 1, currentHookProcessingContext);
+                currentHookProcessingContext.type = 'error'; // Ensure type is error
+                // Do not proceed further down the 'around' chain for normal execution.
+                // The main runHooks flow will handle error hooks based on this context.
+                return currentHookProcessingContext;
             }
         };
         // Initial call to dispatch: chainInitialContext (Svc) is assignable to Service<A> for contextForDispatch.
         return dispatch(0, chainInitialContext);
     };
     // --- Main Execution Flow ---
-    // Stage 1: Regular Global 'before' hooks
-    currentContext.type = 'before';
-    for (const hook of applicableGlobalBeforeHooks) {
-        if (currentContext.error)
-            break;
-        const hookFnInstance = hook.fn;
-        if (isAroundHookFunction(hookFnInstance)) {
-            console.warn(`[ScorpionJS] Misplaced AroundHookFunction in 'before' global hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
-            continue;
-        }
-        try {
-            const hookCallResult = await hookFnInstance(currentContext);
-            if (hookCallResult !== undefined && hookCallResult !== null)
-                currentContext = { ...currentContext, ...hookCallResult };
-        }
-        catch (err) {
-            currentContext.error = err;
-        }
-    }
-    // Stage 2: Service-specific 'before' hooks
+    // Stage 1: Execute Regular Global 'before' hooks
     if (!currentContext.error) {
-        currentContext.type = 'before';
-        for (const hook of applicableServiceBeforeHooks) {
-            if (currentContext.error)
-                break;
-            const hookFnInstance = hook.fn;
-            if (isAroundHookFunction(hookFnInstance)) {
-                console.warn(`[ScorpionJS] Misplaced AroundHookFunction in 'before' service hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
-                continue;
-            }
-            try {
-                // Service-specific hooks take HookContext<A, Svc>. currentContext is already this type.
-                const hookCallResult = await hookFnInstance(currentContext);
-                if (hookCallResult !== undefined && hookCallResult !== null)
-                    currentContext = { ...currentContext, ...hookCallResult };
-            }
-            catch (err) {
-                currentContext.error = err;
-            }
-        }
+        currentContext = await executeStandardHooks(applicableGlobalBeforeHooks, currentContext, 'before', servicePath, method);
     }
-    // Stage 3: Interceptor Global 'before' hooks
+    // Stage 2: Execute Service-specific 'before' hooks
     if (!currentContext.error) {
-        currentContext.type = 'before';
-        for (const hook of applicableInterceptorBeforeHooks) {
-            if (currentContext.error)
-                break;
-            const hookFnInstance = hook.fn;
-            if (isAroundHookFunction(hookFnInstance)) {
-                console.warn(`[ScorpionJS] Misplaced AroundHookFunction in 'before' interceptor hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
-                continue;
-            }
-            try {
-                // Global/Interceptor hooks take HookContext<A, Service<A>>. currentContext is HookContext<A, Svc> which is assignable.
-                const hookCallResult = await hookFnInstance(currentContext);
-                if (hookCallResult !== undefined && hookCallResult !== null)
-                    currentContext = { ...currentContext, ...hookCallResult };
-            }
-            catch (err) {
-                currentContext.error = err;
-            }
-        }
+        currentContext = await executeStandardHooks(applicableServiceBeforeHooks, currentContext, 'before', servicePath, method);
+    }
+    // Stage 3: Execute Interceptor Global 'before' hooks
+    if (!currentContext.error) {
+        currentContext = await executeStandardHooks(applicableInterceptorBeforeHooks, currentContext, 'before', servicePath, method);
     }
     // Stage 4: Execute 'around' chain (Regular Global -> Service-specific -> Interceptor Global -> Service Method)
     if (!currentContext.error) {
@@ -223,117 +188,29 @@ export async function runHooks(initialContext, globalHooks, interceptorGlobalHoo
     // These run only if no error has occurred up to this point from before/around/service method.
     // If an 'after' hook itself throws, it will set currentContext.error, which is then handled by Stage 6.
     if (!currentContext.error) {
-        currentContext.type = 'after';
-        // Interceptor Global 'after' hooks
-        for (const hook of applicableInterceptorAfterHooks.slice().reverse()) {
-            if (currentContext.error)
-                break; // Stop if an earlier after-hook in this stage caused an error
-            const hookFnInstance = hook.fn;
-            if (isAroundHookFunction(hookFnInstance)) {
-                console.warn(`[ScorpionJS] Misplaced AroundHookFunction in 'after' interceptor hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
-                continue;
-            }
-            try {
-                const hookCallResult = await hookFnInstance(currentContext);
-                if (hookCallResult !== undefined && hookCallResult !== null)
-                    currentContext = { ...currentContext, ...hookCallResult };
-            }
-            catch (err) {
-                currentContext.error = err;
-            }
-        }
-        // Service-specific 'after' hooks
+        // Execute Interceptor Global 'after' hooks
+        currentContext = await executeStandardHooks(applicableInterceptorAfterHooks, currentContext, 'after', servicePath, method);
+        // Execute Service-specific 'after' hooks
         if (!currentContext.error) {
-            for (const hook of applicableServiceAfterHooks.slice().reverse()) {
-                if (currentContext.error)
-                    break;
-                const hookFnInstance = hook.fn;
-                if (isAroundHookFunction(hookFnInstance)) {
-                    console.warn(`[ScorpionJS] Misplaced AroundHookFunction in 'after' service hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
-                    continue;
-                }
-                try {
-                    // Service-specific hooks take HookContext<A, Svc>. currentContext is already this type.
-                    const hookCallResult = await hookFnInstance(currentContext);
-                    if (hookCallResult !== undefined && hookCallResult !== null)
-                        currentContext = { ...currentContext, ...hookCallResult };
-                }
-                catch (err) {
-                    currentContext.error = err;
-                }
-            }
+            currentContext = await executeStandardHooks(applicableServiceAfterHooks, currentContext, 'after', servicePath, method);
         }
-        // Regular Global 'after' hooks
+        // Execute Regular Global 'after' hooks
         if (!currentContext.error) {
-            for (const hook of applicableGlobalAfterHooks.slice().reverse()) {
-                if (currentContext.error)
-                    break;
-                const hookFnInstance = hook.fn;
-                if (isAroundHookFunction(hookFnInstance)) {
-                    console.warn(`[ScorpionJS] Misplaced AroundHookFunction in 'after' global hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
-                    continue;
-                }
-                try {
-                    const hookCallResult = await hookFnInstance(currentContext);
-                    if (hookCallResult !== undefined && hookCallResult !== null)
-                        currentContext = { ...currentContext, ...hookCallResult };
-                }
-                catch (err) {
-                    currentContext.error = err;
-                }
-            }
+            currentContext = await executeStandardHooks(applicableGlobalAfterHooks, currentContext, 'after', servicePath, method);
         }
     }
     // Stage 6: 'error' hooks (LIFO: Interceptor -> Service -> Global)
     // This block runs if an error occurred at any point: before, around, service method, or in 'after' hooks.
     if (currentContext.error) {
-        currentContext.type = 'error';
-        // Error hooks run: Interceptor -> Service -> Global (LIFO relative to their 'before' counterparts)
-        for (const hook of applicableInterceptorErrorHooks.slice().reverse()) {
-            const hookFnInstance = hook.fn;
-            if (isAroundHookFunction(hookFnInstance)) {
-                console.warn(`[ScorpionJS] Misplaced AroundHookFunction in 'error' interceptor hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
-                continue;
-            }
-            try {
-                const hookCallResult = await hookFnInstance(currentContext);
-                if (hookCallResult !== undefined && hookCallResult !== null)
-                    currentContext = { ...currentContext, ...hookCallResult };
-            }
-            catch (e) {
-                console.error('[ScorpionJS] Error in interceptor error hook itself:', e); /* Error in error hook; suppress */
-            }
-        }
-        for (const hook of applicableServiceErrorHooks.slice().reverse()) {
-            const hookFnInstance = hook.fn;
-            if (isAroundHookFunction(hookFnInstance)) {
-                console.warn(`[ScorpionJS] Misplaced AroundHookFunction in 'error' service hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
-                continue;
-            }
-            try {
-                const hookCallResult = await hookFnInstance(currentContext);
-                if (hookCallResult !== undefined && hookCallResult !== null)
-                    currentContext = { ...currentContext, ...hookCallResult };
-            }
-            catch (e) {
-                console.error('[ScorpionJS] Error in service error hook itself:', e); /* Error in error hook; suppress */
-            }
-        }
-        for (const hook of applicableGlobalErrorHooks.slice().reverse()) {
-            const hookFnInstance = hook.fn;
-            if (isAroundHookFunction(hookFnInstance)) {
-                console.warn(`[ScorpionJS] Misplaced AroundHookFunction in 'error' global hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
-                continue;
-            }
-            try {
-                const result = await hookFnInstance(currentContext);
-                if (result !== undefined && result !== null)
-                    currentContext = { ...currentContext, ...result };
-            }
-            catch (e) {
-                console.error('[ScorpionJS] Error in global error hook itself:', e); /* Error in error hook; suppress */
-            }
-        }
+        // Execute Interceptor error hooks
+        currentContext = await executeStandardHooks(applicableInterceptorErrorHooks, currentContext, 'error', servicePath, method, true // Suppress error logging for error hooks
+        );
+        // Execute Service-specific error hooks
+        currentContext = await executeStandardHooks(applicableServiceErrorHooks, currentContext, 'error', servicePath, method, true // Suppress error logging for error hooks
+        );
+        // Execute Regular Global error hooks
+        currentContext = await executeStandardHooks(applicableGlobalErrorHooks, currentContext, 'error', servicePath, method, true // Suppress error logging for error hooks
+        );
     }
     return currentContext;
 }

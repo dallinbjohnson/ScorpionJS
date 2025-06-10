@@ -76,46 +76,40 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
           }
         }
 
-        // Determine route path segment
+        // Determine route path segment based on method type or explicit configuration
         if (methodOptions?.path !== undefined) {
-          routePathSegment = methodOptions.path.startsWith('/') ? methodOptions.path : `/${methodOptions.path}`;
+          // Use explicitly configured path
+          routePathSegment = methodOptions.path;
         } else {
-          // Default paths for standard methods
+          // Use default path based on method type
           if (['get', 'update', 'patch', 'remove'].includes(methodName)) {
-            routePathSegment = `/:id`;
+            routePathSegment = ':id'; // ID-based methods
           } else if (methodName === 'find' || methodName === 'create') {
             routePathSegment = ''; // Base path for find/create
           } else {
-            // Default for custom methods: /servicePath/methodName
-            // To make it distinct, ensure custom methods don't clash with /:id by default
-            routePathSegment = `/${methodName}`;
+            routePathSegment = methodName; // Custom methods use method name
           }
         }
         
         // Construct the full route path
-        // If routePathSegment is just "/", treat it as the base path for the service.
-        // If methodOptions.path was an empty string for a non-standard method, it means base path.
-        let fullRoutePath = `/${path}`;
-        if (routePathSegment && routePathSegment !== '/') {
-            fullRoutePath += routePathSegment.startsWith('/') ? routePathSegment : `/${routePathSegment}`;
-        } else if (routePathSegment === '/' && methodName !== 'find' && methodName !== 'create') {
-            // if path is explicitly '/' for a method that isn't find/create, it means service base + method name
-            // This case is a bit ambiguous, let's assume if path is '/' it means service base path
-            // and the method is identified by HTTP verb. For custom methods, this might be less clear.
-            // For now, if path is '/' for custom method, it will be /servicePath
-            // This logic might need refinement based on desired behavior for custom methods + path: '/'
-        } else if (routePathSegment === '' && (methodName === 'find' || methodName === 'create')) {
-            // This is fine, already /servicePath
-        } else if (routePathSegment === '' && !(['find', 'get', 'create', 'update', 'patch', 'remove'].includes(methodName))) {
-            // Custom method with empty path override means /servicePath
-        }
-
-        // Prevent double slashes if path was empty and segment starts with /
-        fullRoutePath = fullRoutePath.replace(/\/\//g, '/');
-        if (fullRoutePath !== '/' && fullRoutePath.endsWith('/')) {
-            fullRoutePath = fullRoutePath.slice(0, -1); // Remove trailing slash unless it's the root
-        }
-        if (fullRoutePath === '') fullRoutePath = '/'; // Ensure root path is at least '/'
+        const buildRoutePath = (servicePath: string, segment: string): string => {
+          // Normalize segments
+          const normalizedServicePath = servicePath.startsWith('/') ? servicePath : `/${servicePath}`;
+          const normalizedSegment = segment ? 
+            (segment.startsWith('/') ? segment : `/${segment}`) : '';
+          
+          // Combine and clean up the path
+          let result = `${normalizedServicePath}${normalizedSegment}`;
+          result = result.replace(/\/\//g, '/'); // Remove double slashes
+          
+          // Handle trailing slashes and empty paths
+          if (result !== '/' && result.endsWith('/')) {
+            result = result.slice(0, -1);
+          }
+          return result || '/';
+        };
+        
+        const fullRoutePath = buildRoutePath(path, routePathSegment);
 
 
         console.log(`  Adding route: ${httpMethod} ${fullRoutePath} -> ${path}.${methodName}`);
@@ -128,37 +122,15 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
       if (!this.serviceHooks[path]) {
         this.serviceHooks[path] = [];
       }
-      const serviceHooksForPath = this.serviceHooks[path]; // This is HookObject<this, Service<this>>[]
-      const actualConfig = options.hooks;
-
-      const hookTypesToProcess: HookType[] = ['before', 'after', 'error', 'around'];
-
-      for (const hookType of hookTypesToProcess) {
-        const methodConfig = actualConfig[hookType];
-        if (methodConfig) {
-          for (const methodName in methodConfig) {
-            if (Object.prototype.hasOwnProperty.call(methodConfig, methodName)) {
-              const configEntry = methodConfig[methodName];
-              if (configEntry) {
-                const fns = Array.isArray(configEntry) ? configEntry : [configEntry];
-                for (const fn of fns) {
-                  if (typeof fn !== 'function') {
-                    console.warn(`[ScorpionApp.service] Expected a hook function for service '${path}', ${hookType}.${methodName}, but got ${typeof fn}. Skipping.`);
-                    continue;
-                  }
-                  const hookObject: HookObject<this, Service<this>> = {
-                    type: hookType,
-                    fn: fn as (StandardHookFunction<this, Service<this>> | AroundHookFunction<this, Service<this>>),
-                    servicePathPattern: path, // Exact match for service-specific hooks
-                    methodPattern: methodName === 'all' ? '*' : methodName,
-                  };
-                  serviceHooksForPath.push(hookObject);
-                }
-              }
-            }
-          }
-        }
-      }
+      
+      // Process hooks configuration for this service
+      // Use type assertion to handle the generic variance issue
+      this._processHookConfig(
+        options.hooks as unknown as HooksApiConfig<this, Service<this>>,
+        path, // Exact match for service-specific hooks
+        this.serviceHooks[path],
+        `[ScorpionApp.service] service '${path}'` // Context for error messages
+      );
     }
 
     return this;
@@ -204,6 +176,12 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
    * @param config The hook configuration object.
    * @returns The ScorpionApp instance for chaining.
    */
+  /**
+   * Registers global hooks using a structured configuration object.
+   *
+   * @param config The hook configuration object.
+   * @returns The ScorpionApp instance for chaining.
+   */
   public hooks(config: HooksApiConfig<this, Service<this> | undefined>): this;
   /**
    * Registers hooks for services matching a path pattern using a structured configuration object.
@@ -214,36 +192,51 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
    */
   public hooks(pathPattern: string, config: HooksApiConfig<this, Service<this>>): this;
   public hooks(arg1: string | HooksApiConfig<this, Service<this> | undefined>, arg2?: HooksApiConfig<this, Service<this>>): this {
-    if (typeof arg1 === 'string') {
-      // Service-specific hooks
-      const servicePathPattern = arg1;
-      const config = arg2;
+    // Determine if this is a global hook registration or a path-specific hook registration
+    const isGlobalHookRegistration = typeof arg1 !== 'string';
+    
+    // Extract parameters based on call pattern
+    const servicePathPattern = isGlobalHookRegistration ? '*' : arg1;
+    
+    // Validate configuration
+    if (isGlobalHookRegistration) {
+      // Global hooks case
+      const config = arg1 as HooksApiConfig<this, Service<this> | undefined>;
+      
+      if (!config) {
+        console.warn('[ScorpionApp.hooks] Error: Global hook configuration object is undefined.');
+        return this;
+      }
+      
+      // Process global hooks with explicit typing
+      this._processHookConfig<Service<this> | undefined>(
+        config,
+        servicePathPattern,
+        this.globalHooks,
+        '[ScorpionApp.hooks] Global'
+      );
+    } else {
+      // Service-specific hooks case
+      const config = arg2 as HooksApiConfig<this, Service<this>>;
+      
       if (!config) {
         console.warn(`[ScorpionApp.hooks] Error: Configuration object missing for path pattern '${servicePathPattern}'.`);
         return this;
       }
+      
+      // Process service-specific hooks
       if (!this.serviceHooks[servicePathPattern]) {
         this.serviceHooks[servicePathPattern] = [];
       }
+      
       this._processHookConfig<Service<this>>(
         config,
         servicePathPattern,
-        this.serviceHooks[servicePathPattern]
-      );
-    } else {
-      // Global hooks
-      const config = arg1;
-      const servicePathPattern = '*';
-      if (!config) { 
-        console.warn('[ScorpionApp.hooks] Error: Global hook configuration object is undefined.');
-        return this;
-      }
-      this._processHookConfig<Service<this> | undefined>(
-        config,
-        servicePathPattern,
-        this.globalHooks
+        this.serviceHooks[servicePathPattern],
+        `[ScorpionApp.hooks] Service '${servicePathPattern}'`
       );
     }
+    
     return this;
   }
 
@@ -261,32 +254,45 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
     return service;
   }
 
+  /**
+   * Registers global interceptor hooks using a structured configuration object.
+   * Interceptor hooks run between standard global hooks and service-specific hooks.
+   *
+   * @param config The hook configuration object.
+   * @returns The ScorpionApp instance for chaining.
+   */
   public interceptorHooks(config: HooksApiConfig<this, Service<this> | undefined>): this;
+  /**
+   * Registers interceptor hooks for services matching a path pattern.
+   *
+   * @param pathPattern A glob-like pattern for service paths.
+   * @param config The hook configuration object.
+   * @returns The ScorpionApp instance for chaining.
+   */
   public interceptorHooks(pathPattern: string, config: HooksApiConfig<this, Service<this> | undefined>): this;
   public interceptorHooks(arg1: string | HooksApiConfig<this, Service<this> | undefined>, arg2?: HooksApiConfig<this, Service<this> | undefined>): this {
-    let servicePathPattern = '*';
-    let configToProcess: HooksApiConfig<this, Service<this> | undefined>;
-
-    if (typeof arg1 === 'string') {
-      servicePathPattern = arg1;
-      if (!arg2) {
-        console.warn(`[ScorpionApp.interceptorHooks] Configuration object missing for pattern '${servicePathPattern}'.`);
-        return this;
-      }
-      configToProcess = arg2;
-    } else {
-      configToProcess = arg1;
-    }
-
-    if (!configToProcess) {
-      console.warn('[ScorpionApp.interceptorHooks] Hook configuration object is undefined.');
+    // Determine if this is a global interceptor registration or a path-specific registration
+    const isGlobalRegistration = typeof arg1 !== 'string';
+    
+    // Extract parameters based on call pattern
+    const servicePathPattern = isGlobalRegistration ? '*' : arg1;
+    const config = isGlobalRegistration ? arg1 : arg2;
+    
+    // Validate configuration
+    if (!config) {
+      const errorMsg = isGlobalRegistration
+        ? '[ScorpionApp.interceptorHooks] Hook configuration object is undefined.'
+        : `[ScorpionApp.interceptorHooks] Configuration object missing for pattern '${servicePathPattern}'.`;
+      console.warn(errorMsg);
       return this;
     }
 
+    // Process interceptor hooks
     this._processHookConfig<Service<this> | undefined>(
-      configToProcess,
+      config,
       servicePathPattern,
-      this.interceptorGlobalHooks
+      this.interceptorGlobalHooks,
+      '[ScorpionApp.interceptorHooks]'
     );
     return this;
   }
@@ -294,7 +300,8 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
   private _processHookConfig<Svc extends Service<this> | undefined>(
     config: HooksApiConfig<this, Svc>,
     servicePathPattern: string,
-    hooksArray: HookObject<this, Svc>[]
+    hooksArray: HookObject<this, Svc>[],
+    errorContext: string = '[ScorpionApp.hooks]'
   ): void {
     const hookTypesToProcess: HookType[] = ['before', 'after', 'error', 'around'];
 
@@ -308,7 +315,7 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
               const fns = Array.isArray(configEntry) ? configEntry : [configEntry];
               for (const fn of fns) {
                 if (typeof fn !== 'function') {
-                  console.warn(`[ScorpionApp.hooks] Expected a hook function for ${hookType}.${methodName}, but got ${typeof fn}. Skipping.`);
+                  console.warn(`${errorContext} Expected a hook function for ${hookType}.${methodName}, but got ${typeof fn}. Skipping.`);
                   continue;
                 }
                 const hookObject: HookObject<this, Svc> = {
@@ -349,133 +356,20 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
     });
   }
 
+  /**
+   * Start the HTTP server and listen on the specified port.
+   * 
+   * @param port The port number to listen on
+   * @param callback Optional callback to run when the server starts
+   * @returns The HTTP server instance
+   */
   public listen(port: number, callback?: () => void): http.Server {
     const server = http.createServer(async (req: http.IncomingMessage, res: http.ServerResponse) => {
-      const { method, url } = req;
-      if (!method || !url) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: 'Bad Request' }));
-        return;
-      }
-
-      const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
-      const reqPath = parsedUrl.pathname;
-      const queryParams: Record<string, string | string[]> = {};
-      parsedUrl.searchParams.forEach((value: string, key: string) => { // Explicitly type value and key
-        const existing = queryParams[key];
-        if (existing) {
-          if (Array.isArray(existing)) {
-            existing.push(value);
-          } else {
-            queryParams[key] = [existing, value];
-          }
-        } else {
-          queryParams[key] = value;
-        }
-      });
-
-      const routeMatch = findRoute(this.router, method, reqPath);
-
-      if (!routeMatch) {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ message: `Cannot ${method} ${reqPath}` }));
-        return;
-      }
-
-      const { servicePath, methodName } = routeMatch.data; // data is ScorpionRouteData
-      const service = this.getService<Service<this>>(servicePath);
-      const routeParams = routeMatch.params || {}; // params is Record<string, string> | undefined
-
-      const params: Params = { route: routeParams, query: queryParams };
-
       try {
-        let result: any;
-        let data: any;
-
-        if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
-          data = await this.parseRequestBody(req);
-        }
-
-        const serviceMethodExists = typeof (service as any)[methodName] === 'function';
-        if (!serviceMethodExists) {
-          throw new NotFound(`Method '${methodName}' not implemented on service '${servicePath}'`);
-        }
-
-        // 'service' is already defined from: const service = this.getService(servicePath);
-
-        // Prepare initial HookContext
-        const initialContext: HookContext<this, typeof service> = {
-          app: this,
-          service: service, // Use the specifically typed service instance
-          servicePath,
-          method: methodName,
-          type: 'before', // Initial phase before any hooks run for the method
-          params: {
-            ...params, // existing route & query params
-            req, // Pass the raw request object for potential use in hooks
-            res, // Pass the raw response object for potential use in hooks (e.g. setting headers early)
-          },
-          id: routeParams?.id,
-          data,
-          // result, error, statusCode will be populated by hooks or service method
-        };
-
-        const globalHooksForCall = this.globalHooks as HookObject<this, Service<this> | undefined>[];
-        const interceptorHooksForCall = (this.interceptorGlobalHooks || []) as HookObject<this, Service<this> | undefined>[];
-        const specificServiceHooks = (this.serviceHooks[servicePath] || []) as HookObject<this, typeof service>[];
-        const finalContext = await this.executeHooks(initialContext, globalHooksForCall, interceptorHooksForCall, specificServiceHooks);
-
-        if (finalContext.error) {
-          // Error handling logic will use finalContext.error and finalContext.statusCode
-          // This will be refined when error hooks are fully implemented
-          let statusCode = finalContext.statusCode || 500;
-          let errorMessage = 'Internal Server Error';
-          let errorName = 'Error';
-          let errorData = undefined;
-
-          if (finalContext.error instanceof ScorpionError) {
-            statusCode = finalContext.error.code;
-            errorMessage = finalContext.error.message;
-            errorName = finalContext.error.name;
-            errorData = finalContext.error.data;
-          } else if (finalContext.error instanceof Error) {
-            errorMessage = finalContext.error.message;
-            errorName = finalContext.error.name;
-          }
-          // Ensure statusCode from context takes precedence if set by a hook
-          statusCode = finalContext.statusCode || statusCode;
-
-          console.error(`Error processing ${method} ${reqPath} for ${servicePath}.${methodName}:`, finalContext.error);
-          res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ name: errorName, message: errorMessage, code: statusCode, data: errorData }));
-          return; // Stop further processing for this request
-        }
-
-        // Send successful response using finalContext.result
-        // Hooks might have modified the result or status code
-        const responseStatusCode = finalContext.statusCode || 200;
-        result = finalContext.result;
-
-        res.writeHead(responseStatusCode, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(result));
-      } catch (error: any) { // This catch block should ideally not be hit if executeHooks handles all errors
-
-        let statusCode = 500;
-        let message = 'Internal Server Error';
-        let errorName = 'Error';
-
-        if (error instanceof ScorpionError) {
-          statusCode = error.code;
-          message = error.message;
-          errorName = error.name;
-        } else if (error instanceof Error) {
-          console.error(`Unhandled error processing ${method} ${reqPath}:`, error);
-          message = error.message;
-          errorName = error.name;
-        }
-
-        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ name: errorName, message, code: statusCode }));
+        await this._handleHttpRequest(req, res);
+      } catch (error: any) {
+        // This catch block is a last resort if _handleHttpRequest throws
+        this._sendErrorResponse(res, error);
       }
     });
 
@@ -487,82 +381,253 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
     });
     return server;
   }
+  
+  /**
+   * Handle an incoming HTTP request by routing it to the appropriate service method.
+   * 
+   * @param req The HTTP request object
+   * @param res The HTTP response object
+   */
+  private async _handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Validate request basics
+    const { method, url } = req;
+    if (!method || !url) {
+      throw new BadRequest('Invalid request: missing method or URL');
+    }
+
+    // Parse URL and extract query parameters
+    const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
+    const reqPath = parsedUrl.pathname;
+    const queryParams = this._parseQueryParams(parsedUrl);
+    
+    // Find matching route
+    const routeMatch = findRoute(this.router, method, reqPath);
+    if (!routeMatch) {
+      throw new NotFound(`Cannot ${method} ${reqPath}`);
+    }
+
+    // Get service and method information
+    const { servicePath, methodName } = routeMatch.data;
+    const service = this.getService<Service<this>>(servicePath);
+    const routeParams = routeMatch.params || {};
+    const params: Params = { route: routeParams, query: queryParams };
+
+    // Parse request body for methods that may contain it
+    let data: any;
+    if (['POST', 'PUT', 'PATCH'].includes(method)) {
+      data = await this.parseRequestBody(req);
+    }
+
+    // Verify service method exists
+    if (typeof (service as any)[methodName] !== 'function') {
+      throw new NotFound(`Method '${methodName}' not implemented on service '${servicePath}'`);
+    }
+
+    // Prepare initial context for hook execution
+    const initialContext: HookContext<this, typeof service> = {
+      app: this,
+      service,
+      servicePath,
+      method: methodName,
+      type: 'before',
+      params: {
+        ...params,
+        req,
+        res,
+      },
+      id: routeParams?.id,
+      data,
+    };
+
+    // Get applicable hooks
+    const globalHooks = this.globalHooks;
+    const interceptorHooks = this.interceptorGlobalHooks || [];
+    const serviceHooks = this.serviceHooks[servicePath] || [];
+    
+    // Execute hooks and service method
+    const finalContext = await this.executeHooks(
+      initialContext, 
+      globalHooks, 
+      interceptorHooks, 
+      serviceHooks as HookObject<this, typeof service>[]
+    );
+
+    // Handle errors if any occurred during hook execution
+    if (finalContext.error) {
+      this._sendErrorResponse(res, finalContext.error, finalContext.statusCode);
+      return;
+    }
+
+    // Send successful response
+    const statusCode = finalContext.statusCode || 200;
+    res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(finalContext.result));
+  }
+  
+  /**
+   * Parse query parameters from a URL.
+   * 
+   * @param parsedUrl The parsed URL object
+   * @returns Record of query parameters, handling arrays of values
+   */
+  private _parseQueryParams(parsedUrl: URL): Record<string, string | string[]> {
+    const queryParams: Record<string, string | string[]> = {};
+    
+    parsedUrl.searchParams.forEach((value: string, key: string) => {
+      const existing = queryParams[key];
+      if (existing) {
+        if (Array.isArray(existing)) {
+          existing.push(value);
+        } else {
+          queryParams[key] = [existing, value];
+        }
+      } else {
+        queryParams[key] = value;
+      }
+    });
+    
+    return queryParams;
+  }
+  
+  /**
+   * Send an error response with appropriate status code and error details.
+   * 
+   * @param res The HTTP response object
+   * @param error The error that occurred
+   * @param statusCodeOverride Optional status code to override the error's code
+   */
+  private _sendErrorResponse(
+    res: http.ServerResponse, 
+    error: any, 
+    statusCodeOverride?: number
+  ): void {
+    let statusCode = statusCodeOverride || 500;
+    let message = 'Internal Server Error';
+    let errorName = 'Error';
+    let errorData: any;
+    
+    if (error instanceof ScorpionError) {
+      statusCode = statusCodeOverride || error.code;
+      message = error.message;
+      errorName = error.name;
+      errorData = error.data;
+    } else if (error instanceof Error) {
+      message = error.message;
+      errorName = error.name;
+      console.error(`Unhandled error:`, error);
+    }
+    
+    res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      name: errorName, 
+      message, 
+      code: statusCode,
+      data: errorData
+    }));
+  }
 
 
+/**
+ * Execute a service method with all applicable hooks.
+ * 
+ * @param options Options for the service call including path, method, params, data, and id
+ * @returns The final hook context after all hooks have executed
+ */
 public async executeServiceCall<Svc extends Service<this>>(
   options: ExecuteServiceCallOptions<this, Svc>
 ): Promise<HookContext<this, Svc>> {
   const { servicePath, method, params = {}, data, id } = options;
-
   const serviceInstance = this._services[servicePath] as Svc | undefined;
 
+  // Handle case where service is not found
   if (!serviceInstance) {
+    // Create error context and run only global and interceptor hooks
     const errorContext: HookContext<this, Svc> = {
       app: this,
-      service: undefined as any, 
-      servicePath: servicePath,
+      service: undefined as any,
+      servicePath,
       method: method as string,
-      type: 'error', 
+      type: 'error',
       params: { ...params },
-      data: data,
-      id: id,
+      data,
+      id,
       result: undefined,
       error: new NotFound(`Service on path '${servicePath}' not found.`),
     };
-    const globalHooksForCall = this.globalHooks; // Type: HookObject<this, Service<this>>[]
-    const interceptorHooksForCall = this.interceptorGlobalHooks || []; // Type: HookObject<this, Service<this>>[]
-    // No service-specific hooks apply if the service is not found.
-    return runHooks(errorContext, globalHooksForCall, interceptorHooksForCall, []);
+    
+    // Run hooks with empty service-specific hooks array
+    return runHooks(
+      errorContext, 
+      this.globalHooks, 
+      this.interceptorGlobalHooks || [], 
+      []
+    );
   }
 
-  if (typeof (serviceInstance as any).setup === 'function') {
-    (serviceInstance as any).setup(this, servicePath);
-  } else {
-    (serviceInstance as any).app = this;
-  }
+  // Setup service instance if not already done
+  this._setupServiceInstance(serviceInstance, servicePath);
   
+  // Create initial context for hook execution
   const initialContext: HookContext<this, Svc> = {
     app: this,
     service: serviceInstance,
-    servicePath: servicePath,
-    method: method as string, 
-    type: 'before', 
-    params: { ...params }, 
-    data: data,
-    id: id,
+    servicePath,
+    method: method as string,
+    type: 'before',
+    params: { ...params },
+    data,
+    id,
     result: undefined,
     error: undefined,
   };
 
-  const applicableGlobalHooks = this.globalHooks; 
-  const applicableInterceptorHooks = this.interceptorGlobalHooks || []; 
-  const applicableServiceHooks = this.serviceHooks[servicePath] || []; // This is HookObject<this, Service<this>>[]
+  // Get applicable hooks for this service call
+  const serviceHooks = this.serviceHooks[servicePath] || [];
 
-  const contextToUse = initialContext;
-
-  // Call the unified hook execution logic
-  const finalContext = await this.executeHooks(
-    contextToUse,
-    applicableGlobalHooks, // Pass as HookObject<this, Service<this> | undefined>[]
-    applicableInterceptorHooks, // Pass as HookObject<this, Service<this> | undefined>[]
-    // Cast HookObject<this, Service<this>>[] to HookObject<this, Svc>[] for executeHooks.
-    // This is considered safe because hooks for a general Service<this> can operate on a specific Svc context.
-    applicableServiceHooks as unknown as HookObject<this, Svc>[]
+  // Execute all hooks and return the final context
+  return this.executeHooks(
+    initialContext,
+    this.globalHooks,
+    this.interceptorGlobalHooks || [],
+    serviceHooks as unknown as HookObject<this, Svc>[]
   );
-  return finalContext;
 }
 
+/**
+ * Execute all applicable hooks for a given context.
+ * Delegates to the runHooks function from hooks.ts.
+ * 
+ * @param initialContext The initial hook context
+ * @param globalHooks Global hooks to apply
+ * @param interceptorHooks Interceptor hooks to apply
+ * @param serviceHooks Service-specific hooks to apply
+ * @returns The final hook context after all hooks have executed
+ */
 private async executeHooks<Svc extends Service<this> | undefined>(
   initialContext: HookContext<this, Svc>,
   globalHooks: HookObject<this, Service<this> | undefined>[],
   interceptorHooks: HookObject<this, Service<this> | undefined>[],
   serviceHooks: HookObject<this, Svc>[]
 ): Promise<HookContext<this, Svc>> {
-    // Delegate to the runHooks function from hooks.ts
-    // The `initialContext.app` will be `this` (ScorpionApp instance)
-    // The `initialContext.service` is already populated before this call
-    return runHooks(initialContext, globalHooks, interceptorHooks, serviceHooks);
+  return runHooks(initialContext, globalHooks, interceptorHooks, serviceHooks);
+}
+
+/**
+ * Setup a service instance by calling its setup method or setting its app property.
+ * 
+ * @param serviceInstance The service instance to setup
+ * @param servicePath The path of the service
+ */
+private _setupServiceInstance<Svc extends Service<this>>(
+  serviceInstance: Svc,
+  servicePath: string
+): void {
+  if (typeof (serviceInstance as any).setup === 'function') {
+    (serviceInstance as any).setup(this, servicePath);
+  } else {
+    (serviceInstance as any).app = this;
   }
+}
 }
 
 /**
