@@ -24,10 +24,10 @@ A developer using ScorpionJS would expect:
         *   [x] Implement the basic `createApp(options)` function.
         *   [x] Implement basic plugin system (`app.configure(pluginFunction)`).
 
-    - [ ] **2. Basic Configuration System:**
-        *   Implement loading of configuration (e.g., from `createApp` options, environment variables, files).
-        *   Support for default and environment-specific configurations.
-        *   Mechanism for services/plugins to access configuration.
+    - [x] **2. Basic Configuration System:**
+        *   [x] Implement loading of configuration (e.g., from `createApp` options, environment variables, files).
+        *   [x] Support for default and environment-specific configurations.
+        *   [x] Mechanism for services/plugins to access configuration.
 
     - [x] **3. Dynamic Service Registration, Unregistration, and Invocation:**
         *   [x] Implement `app.service('serviceName', serviceInstance, serviceOptions)` for adding services.
