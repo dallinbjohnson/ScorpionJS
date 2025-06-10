@@ -138,6 +138,76 @@ app.hooks('POST:/api/payments/*', {
 });
 ```
 
+### More Examples
+
+Here are a few more conceptual examples showcasing how hooks can be used with other framework features:
+
+**Schema Validation (Before Hook):**
+
+```javascript
+// Assuming a utility function `validateData` is available
+// and `messageSchema` is a JSON schema definition.
+app.service('messages').hooks({
+  before: {
+    create: [
+      async context => {
+        context.data = await validateData(messageSchema, context.data);
+        return context;
+      }
+    ],
+    patch: [
+      async context => {
+        // Validate only the fields present in the patch data
+        context.data = await validateData(messageSchema, context.data, { partial: true });
+        return context;
+      }
+    ]
+  }
+});
+```
+
+**Internationalization (i18n - Before Hook):**
+
+```javascript
+app.hooks({
+  before: {
+    all: [
+      async context => {
+        // Example: Set locale from an 'Accept-Language' header or a query parameter
+        const langHeader = context.params.headers && context.params.headers['accept-language'];
+        context.params.locale = determineLocale(langHeader || context.params.query?.locale || 'en');
+        return context;
+      }
+    ]
+  }
+});
+
+// Dummy function for illustration
+function determineLocale(preferred) {
+  // Logic to parse header and select best match from supported locales
+  return preferred?.split(',')[0].split('-')[0] || 'en';
+}
+```
+
+**Fault Tolerance (Error Hook Example - Conceptual):**
+
+```javascript
+app.service('externalApi').hooks({
+  error: {
+    all: [
+      async context => {
+        if (context.error.isCircuitBreakerOpen) {
+          console.error(`Circuit breaker is open for ${context.path}. Method: ${context.method}`);
+          // Optionally, transform the error or provide a fallback
+          context.error = new Error('Service temporarily unavailable. Please try again later.');
+        }
+        return context; // Error hooks must return the context or throw a new error
+      }
+    ]
+  }
+});
+```
+
 ### Interceptor Hooks
 
 Interceptor hooks are a special type of global hook that run *between* standard global hooks and service-specific hooks. They provide a powerful way to inject logic at a very specific point in the execution chain, often used for fine-grained control, monitoring, or last-minute context modifications before or after the core service logic and its dedicated hooks.
@@ -168,6 +238,38 @@ app.interceptorHooks({
   }
   // ... other interceptor hooks (after, error)
 });
+
+## HookContext Object
+
+The `HookContext` object is central to the hook system. It carries all relevant information about the service method call. Key properties typically include:
+
+*   `app`: The ScorpionJS application instance.
+*   `service`: The service instance (undefined for global hooks not matching a service path).
+*   `method`: The name of the service method being called (e.g., 'find', 'create', 'customMethod').
+*   `type`: The type of hook ('before', 'after', 'error', 'around').
+*   `path`: The service path (e.g., 'messages').
+*   `id`: The ID for a get, update, patch, or remove call.
+*   `data`: The data sent with a create, update, or patch call.
+*   `params`: An object containing:
+    *   `query`: Query parameters for the service method.
+    *   `user`: The authenticated user (if authentication is used).
+    *   `provider`: The transport provider (e.g., 'rest', 'websocket').
+    *   `headers`: Request headers (primarily for transport-level hooks or information).
+    *   `locale`: (Example for i18n) The determined locale for the request.
+    *   Other custom parameters passed to the service call or added by hooks.
+*   `result`: The result of the service method call (available in `after` and `around` hooks post-`next()`).
+*   `error`: The error object if an error occurred (available in `error` and `around` hooks post-`next()` if an error was thrown).
+*   `config`: Access to service-specific or global configuration relevant to the hook's operation.
+
+Developers can add custom properties to `context.params` to pass information between hooks or to the service method.
+
+## Dynamic Hook Management and Unregistration
+
+When a service is unregistered using `app.unservice('serviceName')`, all hooks specifically registered for that service (via `app.service('serviceName').hooks(...)`) are automatically removed and will no longer be executed. 
+
+Pattern-based hooks (e.g., `app.hooks('/api/my-service/*', {...})`) are evaluated at runtime. If a service path no longer matches a pattern due to unregistration, the hooks associated with that pattern will naturally cease to apply to the removed service's path.
+
+The internal hook engine is designed to efficiently manage these dynamic changes, ensuring that the correct set of hooks is always applied based on the current state of registered services and hook configurations.
 ```
 
 Global and Interceptor hooks can be typed to accept `Service<AppType> | undefined` for their service generic if they are intended to run without a specific service context. If registered with a path pattern (e.g., `app.hooks('/users/*', config)`), they become service-specific for matching services, and `context.service` will be defined.

@@ -67,6 +67,23 @@ ScorpionJS automatically maps service methods to REST endpoints:
 | `remove` | DELETE | `/path/:id` | Remove a resource |
 | `customMethod` | POST | `/path/:id/customMethod` | Custom method |
 
+### Dynamic Service Integration
+
+The REST transport is designed to work seamlessly with ScorpionJS's dynamic service layer. When a new service is registered using `app.service()`, the REST transport automatically creates the corresponding HTTP endpoints. Conversely, when a service is unregistered using `app.unservice()`, its associated REST endpoints are removed, ensuring that stale routes do not persist.
+
+### Request Validation
+
+If a service has schemas registered for its methods (e.g., for request bodies or query parameters), the REST transport will automatically utilize the framework's schema validation capabilities (often implemented via hooks) to validate incoming requests before they reach the service method. This ensures data integrity and provides early error feedback.
+
+### Advanced Routing Capabilities
+
+Beyond the standard method mapping, ScorpionJS aims to support advanced routing features for the REST transport, including:
+*   **Nested Routes:** Defining routes for sub-resources (e.g., `/users/:userId/posts`).
+*   **Path Parameter Constraints:** Specifying formats or regular expressions for route parameters.
+*   **Route Specificity and Conflict Resolution:** Clear rules for how routes are matched when patterns overlap.
+
+These features provide fine-grained control over your API structure and are detailed further in the routing documentation.
+
 ### Custom REST Method Mapping
 
 You can customize how methods are mapped to REST endpoints:
@@ -174,7 +191,6 @@ Service methods can stream files directly to the client. This is useful for serv
     ```
     The REST transport pipes the `ReadableStream` from the service method to the HTTP response, using chunked transfer encoding. The framework should ideally infer `Content-Type` (e.g., from file extension or `params.streamMetadata`) and can set `Content-Disposition: attachment; filename="report.pdf"` to suggest a download.
 
-
 ## Socket Transport
 
 The Socket transport provides real-time communication using WebSockets.
@@ -190,6 +206,22 @@ The Socket transport provides real-time communication using WebSockets.
 | `maxHttpBufferSize` | Number | `1e6` | Maximum HTTP buffer size |
 | `transports` | Array | `['websocket']` | Transport mechanisms to allow |
 | `middleware` | Array | `[]` | Additional middleware to use |
+
+### Dynamic Service Integration
+
+Similar to the REST transport, the WebSocket transport dynamically adapts to service registrations and unregistrations. When `app.service()` is called, appropriate WebSocket event listeners are set up for the new service's methods. When `app.unservice()` is called, these event listeners are removed, preventing attempts to call methods on non-existent services.
+
+### Message Validation
+
+For services with registered schemas, the WebSocket transport integrates with the framework's validation system. Incoming messages intended for service methods will be automatically validated against these schemas before processing, ensuring that service methods receive data in the expected format.
+
+### Advanced Message Routing
+
+ScorpionJS plans to offer advanced message routing for WebSockets beyond the standard `serviceName::methodName` pattern. This may include:
+*   **Pattern-based Event Handlers:** Allowing services or plugins to listen for messages matching certain patterns.
+*   **Namespace Support:** Enabling more structured and isolated communication channels over a single WebSocket connection.
+
+These features will enhance the flexibility of real-time communication.
 
 ### Socket Event Mapping
 
@@ -243,7 +275,7 @@ When a service method returns a stream of JSON objects (or an array that the fra
     ```
 
 *   **Socket Interaction (Conceptual):**
-    The client initiates a call, potentially indicating a preference for streaming. The server then sends multiple messages in response.
+    The client initiates a call, potentially indicating a preference for streaming. The server then sends multiple messages in response. ScorpionJS supports various stream types over WebSockets, including text, binary, and object streams. The specifics of how streams are chunked and reassembled are handled by the transport, often involving an initial message to establish the stream context and subsequent messages carrying data chunks. The client library will provide utilities to simplify consuming these streams.
 
     **Client-side Request:**
     ```json

@@ -52,8 +52,11 @@ A developer using ScorpionJS would expect:
 
     - [ ] **7. Schema Definition & Basic Validation Utilities:**
         *   Establish conventions for defining service data/query schemas (e.g., JSON Schema).
-        *   Implement basic validation hook utilities (e.g., `validateData(schema)`, `validateQuery(schema)`).
+        *   Implement basic validation hook utilities (e.g., `validateData(schema)`, `validateQuery(schema)`), ensuring they are highly configurable.
         *   Mechanism for services to register their schemas for tooling/metadata.
+        *   *Support for dynamic schema selection based on context (e.g., request headers, user roles).*
+        *   *Support for dynamic schema selection based on a specific field within the request data (e.g., a `type` field determining the rest of the schema).*
+        *   *Deep integration with service registration for automatic schema exposure and validation during transport mapping.*
 
 - [ ] **Phase 2: Transports, Logging & Advanced Hooks**
 
@@ -64,6 +67,7 @@ A developer using ScorpionJS would expect:
         *   Integrate schema validation hooks for request data/query.
         *   Add REST transport configuration (port, host, CORS, body parser options, compression).
         *   *Ensure transport can dynamically add/remove routes when services are registered/unregistered.*
+        *   *Advanced routing capabilities: support for nested routes, path parameter constraints, route specificity, and conflict resolution strategies.*
 
     - [ ] **9. WebSocket Transport (using `crossws`):**
         *   Integrate `crossws` for WebSocket connections.
@@ -73,6 +77,7 @@ A developer using ScorpionJS would expect:
         *   Integrate schema validation for incoming messages.
         *   Configure WebSocket transport options (path, ping/pong, etc.).
         *   *Ensure transport can dynamically add/remove event mappings when services are registered/unregistered.*
+        *   *Advanced message routing: pattern-based event handlers, namespace support for targeted communication.*
 
     - [ ] **10. Comprehensive Logging System:**
         *   Implement a configurable logger (levels: trace, debug, info, warn, error, fatal).
@@ -128,11 +133,28 @@ A developer using ScorpionJS would expect:
         *   Create a `Sandbox` API for executing untrusted code.
         *   Implement resource limiting (CPU, memory) and secure inter-context communication.
 
+    - [ ] **19. Job Queues & Task Scheduling:**
+        *   Define a `JobQueueAdapter` interface and core job processing logic.
+        *   Implement adapters for popular queueing systems (e.g., BullMQ, Agenda.js; consider RabbitMQ, Kafka for advanced scenarios).
+        *   Features: job definition, persistent jobs, delayed jobs, cron-like scheduling, automatic retries with backoff, concurrency control.
+        *   Support for job progress tracking and events.
+        *   Ensure user context (authentication, locale) can be propagated to job handlers.
+        *   (Optional) Basic Admin UI integration for job monitoring and management.
+
 - [ ] **Phase 4: Polish, Ecosystem & Multi-Runtime Expansion**
 
-    - [ ] **19. Fault Tolerance Primitives:**
-        *   Implement robust error handling and custom error classes (`ScorpionError`, `NotAuthenticated`, `Forbidden`, `NotFound`, `BadRequest`, etc.).
-        *   Implement and integrate fault tolerance patterns: retries, timeouts, circuit breakers, bulkhead, fallback (configurable globally and per-service).
+    - [ ] **20. Fault Tolerance Primitives & Advanced Error Handling:**
+        *   Implement robust error handling with a hierarchy of custom error classes (`ScorpionError`, `NotAuthenticated`, `Forbidden`, `NotFound`, `BadRequest`, `ServiceUnavailable`, etc.).
+        *   Implement and integrate core fault tolerance patterns:
+            *   Retries (with configurable strategies like exponential backoff).
+            *   Timeouts (for service calls and operations).
+            *   Circuit Breakers (to prevent cascading failures).
+            *   Bulkhead (to isolate resources per service/operation).
+            *   Fallbacks (to provide alternative responses during failures).
+        *   Allow global and per-service/method configuration for all fault tolerance patterns.
+        *   Implement event hooks for fault tolerance state changes (e.g., circuit open/closed, retry attempts).
+        *   Develop centralized error handling mechanisms, including error propagation strategies across transports and services.
+        *   Provide guidance on plugin-specific error handling and best practices for debugging.
 
     - [ ] **20. Caching Framework:**
         *   Define a caching abstraction layer and `CacheAdapter` interface.
@@ -146,6 +168,47 @@ A developer using ScorpionJS would expect:
         *   Metrics: Provide Prometheus exporter/integration.
         *   Distributed Tracing: Integrate OpenTelemetry for automatic and manual span creation.
         *   Ensure trace context propagation across services and transports.
+
+    - [ ] **23. SSR & SSG Support:**
+        *   Provide utilities and integration patterns for Server-Side Rendering (SSR) and Static Site Generation (SSG).
+        *   Support for popular frontend frameworks (e.g., React, Vue, Svelte) via adapters or examples.
+        *   Mechanisms for data hydration and state transfer.
+        *   Integration with ScorpionJS routing and services for data fetching.
+        *   Guidance on performance optimizations for rendered pages.
+
+    - [ ] **24. Database & ORM Integration:**
+        *   Maintain a data-agnostic core, providing official adapters and integration patterns for popular ORMs and databases.
+        *   Supported ORMs: Prisma, TypeORM, Sequelize, Mongoose, Knex.js.
+        *   Supported Databases: PostgreSQL, MySQL, SQLite, MongoDB, Redis (as a data store).
+        *   Guidance on transaction management, schema migrations, and connection pooling within ScorpionJS services.
+        *   Examples of using ORM features like relations, validation, and hooks within service logic.
+
+    - [ ] **25. Admin Dashboard Plugin (`scorpionjs-admin`):**
+        *   Develop an extensible admin dashboard plugin.
+        *   Features:
+            *   Service listing and management (view schemas, methods, invoke methods for debugging).
+            *   Real-time monitoring (metrics display, event logs).
+            *   User management (if authentication is integrated).
+            *   Configuration management interface.
+            *   Plugin architecture for adding custom admin panels/widgets.
+
+    - [ ] **26. Internationalization (i18n) Support:**
+        *   Implement core i18n capabilities.
+        *   Locale detection (from headers, query params, user preferences).
+        *   Translation string management (e.g., using JSON files, ICU message format).
+        *   Pluralization and number/date/currency formatting based on locale.
+        *   Integration with templating engines for SSR/SSG.
+        *   Localization of error messages and validation feedback.
+        *   Hooks/utilities for services to access and use i18n features.
+
+    - [ ] **27. Security Hardening & Best Practices:**
+        *   (Extends Item 15 - Authentication Framework in Phase 3)
+        *   Implement rate limiting mechanisms (global, per-service, per-IP/user).
+        *   Provide clear guidance and tools for secrets management (API keys, database credentials).
+        *   Enhance input validation with sanitization options and best practices.
+        *   Recommendations for Transport Layer Security (TLS/SSL) configuration.
+        *   Security checklists for production deployments (e.g., disabling debug modes, secure HTTP headers).
+        *   Regular review and alignment with OWASP guidelines and common web vulnerabilities.
 
     - [ ] **22. GraphQL Transport/Plugin:**
         *   Develop a `scorpionjs-graphql` plugin.
@@ -179,4 +242,8 @@ A developer using ScorpionJS would expect:
         *   Integration tests for services, hooks, transports, and plugins.
         *   End-to-end tests for common application scenarios.
         *   Performance and benchmark tests.
+        *   *Guidance on recommended testing libraries and tools (e.g., Jest, Vitest, Playwright for E2E).*
+        *   *Detailed strategies for unit, integration, and end-to-end testing of services, hooks, plugins, and transports.*
+        *   *Best practices for mocking and stubbing dependencies in a service-oriented architecture.*
+        *   *Ensuring test coverage for multi-runtime compatibility.*
         *   Test across all supported JavaScript runtimes and against the client library.
