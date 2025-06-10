@@ -98,35 +98,78 @@ ScorpionJS services automatically emit events for standard methods. The event em
 | `patch` | `patched` | The patched item |
 | `remove` | `removed` | The removed item |
 
-Events are emitted both at the service level and globally on the app instance with the service path as a prefix:
+Events are emitted both at the service level and globally on the app instance with the service path as a prefix.
 
-## Custom Events
+## Custom Method Events
 
-You can emit and listen to custom events:
+ScorpionJS also supports automatic event emission for custom service methods. When a custom method is called, an event is automatically emitted with the method name + 'ed' as the event name:
 
 ```javascript
-// Service with custom events
+// Service with a custom method
+app.service('calculator', {
+  async calculateTotal(data) {
+    const result = { 
+      total: data.items.reduce((sum, item) => sum + item.price, 0),
+      itemCount: data.items.length
+    };
+    return result;
+    // Automatically emits 'calculateTotaled' event with result as data
+  }
+});
+
+// Listen to the automatic custom method event
+app.service('calculator').on('calculateTotaled', (data) => {
+  console.log('Calculation completed:', data);
+});
+```
+
+This automatic event emission for custom methods follows the same pattern as standard methods, making the event system consistent across all service methods.
+
+## Manual Custom Events
+
+In addition to automatic event emission, you can also manually emit custom events with any name of your choice. This gives you full control over when events are emitted and what data they contain:
+
+```javascript
+// Service with manually emitted custom events
 app.service('payments', {
   async processPayment(data, params) {
     // Process payment logic
     const result = await processPayment(data);
     
-    // Emit a custom event
+    // Manually emit a custom event with a specific name
     this.emit('payment_processed', {
       amount: data.amount,
       status: result.status,
       transactionId: result.id
     });
     
+    // You can emit multiple events from a single method
+    if (result.status === 'success') {
+      this.emit('payment_succeeded', { transactionId: result.id });
+    }
+    
     return result;
+    // The method will ALSO automatically emit 'processPaymented' event
   }
 });
 
-// Listen to custom events
+// Listen to manually emitted custom events
 app.service('payments').on('payment_processed', data => {
   console.log('Payment processed:', data);
 });
+
+// Listen to the automatic event
+app.service('payments').on('processPaymented', result => {
+  console.log('Payment method completed:', result);
+});
 ```
+
+Manual event emission is particularly useful when you need to:
+
+1. Emit events at specific points during method execution (not just after completion)
+2. Emit multiple events from a single method
+3. Use custom event names that better describe specific actions or states
+4. Include different data than what the method returns
 
 ## Event Context
 

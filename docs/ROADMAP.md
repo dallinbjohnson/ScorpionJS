@@ -33,6 +33,7 @@ A developer using ScorpionJS would expect:
         *   [x] Implement `app.service('serviceName', serviceInstance, serviceOptions)` for adding services.
         *   [x] Implement `app.unservice('serviceName')` to remove a service and its associated resources (routes, hooks, event listeners).
         *   [x] Develop a dynamic internal mechanism to dispatch calls to service methods, capable of handling runtime service changes.
+        *   [x] Implement event emission for both standard and custom service methods.
         *   [x] Allow per-service configuration via `serviceOptions`.
 
     - [x] **4. Runtime Abstraction Layer (Initial - HTTP):**
@@ -73,17 +74,21 @@ A developer using ScorpionJS would expect:
         *   [x] Implement core EventEmitter-based event system for services.
         *   [x] Support for standard service events (`created`, `updated`, `patched`, `removed`).
         *   [x] Support for custom events with service.emit().
+        *   [x] Support automatic event emission for all service methods with consistent naming conventions.
+        *   [x] Support manual custom event emission from within service methods.
         *   [x] Implement event listener registration (service.on()) and cleanup.
         *   [x] Ensure proper event listener cleanup during service unregistration.
         *   [x] Support for event context with additional information.
-        *   [x] Automatic event emission for standard methods in executeServiceCall.
+        *   [x] Automatic event emission for standard and custom methods in executeServiceCall.
 
-    - [ ] **10. WebSocket Transport & Real-time Events:**
-        *   Map service method calls to WebSocket events.
-        *   Implement cross-runtime WebSocket support (e.g., using `crossws`).
-        *   Implement real-time event publishing for standard service events (`created`, `updated`, etc.).
+    - [ ] **10. WebSocket Transport & Real-time Communication:**
+        *   Integrate a cross-runtime WebSocket solution (e.g., `crossws`).
+        *   Implement WebSocket transport for service method calls.
+        *   [ ] Implement real-time event broadcasting to WebSocket clients.
+        *   Add WebSocket transport configuration (port, host, CORS, authentication).
+        *   *Ensure transport can dynamically add/remove event listeners when services are registered/unregistered.*
+        *   *Support for message routing, event filtering, and client-specific event channels.*
         *   Implement client-side event subscription.
-        *   *Ensure transport can dynamically add/remove event mappings when services are registered/unregistered.*
         *   *Advanced message routing: pattern-based event handlers, namespace support for targeted communication.*
 
     - [ ] **11. Comprehensive Logging System:**
