@@ -75,6 +75,9 @@ export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = an
   on?(event: string, listener: (...args: any[]) => void): this;
   off?(event: string, listener: (...args: any[]) => void): this;
   
+  // Hook configuration method for registering service-specific hooks
+  hooks?(config: HooksApiConfig<any, any>): this;
+  
   // Standard methods - all optional
   find?(params?: Params): Promise<T[] | any>;
   get?(id: string | number, params?: Params): Promise<T | any>;
@@ -143,11 +146,14 @@ export interface AroundHookMethodConfig<A extends IScorpionApp<any> = IScorpionA
   [customMethod: string]: AroundHookMethodConfigEntry<A, S> | undefined;
 }
 
-export interface HooksApiConfig<A extends IScorpionApp<any> = IScorpionApp<any>, S extends Service<A> | undefined = undefined> {
+export interface HooksApiConfig<
+  A extends IScorpionApp<any> = IScorpionApp<any>,
+  S extends Service<A> | undefined = undefined
+> {
+  around?: AroundHookMethodConfig<A, S>;
   before?: StandardHookMethodConfig<A, S>;
   after?: StandardHookMethodConfig<A, S>;
   error?: StandardHookMethodConfig<A, S>;
-  around?: AroundHookMethodConfig<A, S>; // Uses the specific AroundHookMethodConfig
 }
 // --- End Hook Configuration Types ---
 
