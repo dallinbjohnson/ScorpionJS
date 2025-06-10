@@ -45,6 +45,11 @@ export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = an
   setup?(app: A, path: string): void; // Optional setup method
   teardown?(): void; // Optional teardown method for cleanup during unregistration
   
+  // Event methods
+  emit?(event: string, data: any, context?: any): this;
+  on?(event: string, listener: (...args: any[]) => void): this;
+  off?(event: string, listener: (...args: any[]) => void): this;
+  
   // Standard methods - all optional
   find?(params?: Params): Promise<T[] | any>;
   get?(id: string | number, params?: Params): Promise<T | any>;

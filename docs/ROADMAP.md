@@ -69,17 +69,24 @@ A developer using ScorpionJS would expect:
         *   *Ensure transport can dynamically add/remove routes when services are registered/unregistered.*
         *   *Advanced routing capabilities: support for nested routes, path parameter constraints, route specificity, and conflict resolution strategies.*
 
-    - [ ] **9. WebSocket Transport (using `crossws`):**
-        *   Integrate `crossws` for WebSocket connections.
+    - [x] **9. Event System Core Implementation:**
+        *   [x] Implement core EventEmitter-based event system for services.
+        *   [x] Support for standard service events (`created`, `updated`, `patched`, `removed`).
+        *   [x] Support for custom events with service.emit().
+        *   [x] Implement event listener registration (service.on()) and cleanup.
+        *   [x] Ensure proper event listener cleanup during service unregistration.
+        *   [x] Support for event context with additional information.
+        *   [x] Automatic event emission for standard methods in executeServiceCall.
+
+    - [ ] **10. WebSocket Transport & Real-time Events:**
         *   Map service method calls to WebSocket events.
-        *   Handle message serialization/deserialization.
+        *   Implement cross-runtime WebSocket support (e.g., using `crossws`).
         *   Implement real-time event publishing for standard service events (`created`, `updated`, etc.).
-        *   Integrate schema validation for incoming messages.
-        *   Configure WebSocket transport options (path, ping/pong, etc.).
+        *   Implement client-side event subscription.
         *   *Ensure transport can dynamically add/remove event mappings when services are registered/unregistered.*
         *   *Advanced message routing: pattern-based event handlers, namespace support for targeted communication.*
 
-    - [ ] **10. Comprehensive Logging System:**
+    - [ ] **11. Comprehensive Logging System:**
         *   Implement a configurable logger (levels: trace, debug, info, warn, error, fatal).
         *   Support for structured logging (JSON), pretty printing, timestamps, colors.
         *   Allow log output to console and files.

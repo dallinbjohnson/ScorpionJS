@@ -23,10 +23,13 @@ describe('app.unservice', () => {
     expect(app.services).to.have.property('test');
     
     // Unregister the service
-    app.unservice('test');
+    const removedService = app.unservice('test');
     
     // Verify service is no longer registered
     expect(app.services).to.not.have.property('test');
+    
+    // Verify the returned service is the one we registered
+    expect(removedService).to.equal(testService);
   });
   
   it('should throw an error when trying to unregister a non-existent service', () => {

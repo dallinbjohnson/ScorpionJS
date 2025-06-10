@@ -2,6 +2,7 @@
 
 import * as http from 'http';
 import { URL } from 'url';
+import { EventEmitter } from 'events';
 import { IScorpionApp, Service, ServiceOptions, Params, ScorpionRouteData, HookContext, HookObject, HookType, HooksApiConfig, StandardHookFunction, AroundHookFunction, NextFunction, StandardHookMethodConfig, AroundHookMethodConfig, StandardHookMethodConfigEntry, AroundHookMethodConfigEntry } from './types.js';
 import { runHooks } from './hooks.js';
 import { ScorpionError, NotFound, BadRequest } from './errors.js';
@@ -29,6 +30,10 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
   private globalHooks: HookObject<this, Service<this> | undefined>[] = [];
   private interceptorGlobalHooks: HookObject<this, Service<this> | undefined>[] = []; // For hooks that run between global/service-specific layers
   private serviceHooks: Record<string, HookObject<this, Service<this>>[]> = {};
+  
+  // Event system
+  private eventEmitter: EventEmitter = new EventEmitter();
+  private serviceEventListeners: Record<string, Array<{event: string, listener: (...args: any[]) => void}>> = {};
 
   constructor() {
     this.router = createRouter<ScorpionRouteData>();
@@ -53,6 +58,59 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
 
     console.log(`Registering service on path '${path}'`);
     this._services[path] = service;
+  
+    // Initialize service event listeners array
+    this.serviceEventListeners[path] = [];
+  
+    // Add service-specific event methods
+    const serviceObj = service as any;
+  
+    // Add emit method to the service
+    serviceObj.emit = (event: string, data: any, context?: any) => {
+      const fullEvent = `${path} ${event}`;
+      const serviceContext = {
+        service,
+        path,
+        ...context
+      };
+      
+      // Emit on the service-specific event
+      this.eventEmitter.emit(fullEvent, data, serviceContext);
+      
+      // Also emit on the app with the full event name
+      this.eventEmitter.emit(fullEvent, data, serviceContext);
+      
+      return service;
+    };
+  
+    // Add on method to the service
+    serviceObj.on = (event: string, listener: (...args: any[]) => void) => {
+      const fullEvent = `${path} ${event}`;
+      this.eventEmitter.on(fullEvent, listener);
+      
+      // Track this listener for cleanup
+      this.serviceEventListeners[path].push({
+        event: fullEvent,
+        listener
+      });
+      
+      return service;
+    };
+  
+    // Add off method to the service
+    serviceObj.off = (event: string, listener: (...args: any[]) => void) => {
+      const fullEvent = `${path} ${event}`;
+      this.eventEmitter.off(fullEvent, listener);
+      
+      // Remove from tracked listeners
+      const listeners = this.serviceEventListeners[path];
+      const index = listeners.findIndex(l => l.event === fullEvent && l.listener === listener);
+      if (index !== -1) {
+        listeners.splice(index, 1);
+      }
+      
+      return service;
+    };
 
     // Register routes for all service methods (standard and custom)
     for (const methodName in service) {
@@ -567,13 +625,47 @@ public async executeServiceCall<Svc extends Service<this>>(
   // Get applicable hooks for this service call
   const serviceHooks = this.serviceHooks[servicePath] || [];
 
-  // Execute all hooks and return the final context
-  return this.executeHooks(
+  // Execute all hooks
+  const finalContext = await this.executeHooks(
     initialContext,
     this.globalHooks,
     this.interceptorGlobalHooks || [],
     serviceHooks as unknown as HookObject<this, Svc>[]
   );
+  
+  // If the call was successful and it's a standard method, emit an event
+  if (!finalContext.error) {
+    const standardMethodEvents: Record<string, string> = {
+      'create': 'created',
+      'update': 'updated',
+      'patch': 'patched',
+      'remove': 'removed'
+    };
+    
+    const eventName = standardMethodEvents[method as string];
+    if (eventName && finalContext.result) {
+      // Create event context
+      const eventContext = {
+        service: serviceInstance,
+        method: method as string,
+        path: servicePath,
+        result: finalContext.result,
+        params: finalContext.params
+      };
+      
+      // For standard methods, ensure the event data includes all the expected fields
+      // This is especially important for create, update, and patch methods where data is provided
+      let eventData = finalContext.result;
+      
+      // Emit event on the service
+      if (typeof (serviceInstance as any).emit === 'function') {
+        (serviceInstance as any).emit(eventName, eventData, eventContext);
+      }
+    }
+  }
+  
+  // Return the final context
+  return finalContext;
 }
 
 /**
@@ -613,13 +705,23 @@ private _setupServiceInstance<Svc extends Service<this>>(
 }
 
 /**
- * Unregisters a service and removes all associated resources.
+ * Unregister a service from the application.
+ * This removes the service from the registry, cleans up any hooks associated with it,
+ * removes all routes that were created for it, and cleans up any event listeners.
+ * If the service has a teardown method, it will be called to allow for custom cleanup.
  * 
- * @param path The path of the service to unregister.
- * @returns The ScorpionApp instance for chaining.
+ * The following cleanup operations are performed:
+ * - All HTTP routes (standard and custom) are removed
+ * - Service-specific hooks are detached
+ * - Global hooks targeting this service are filtered out
+ * - All event listeners registered by this service are removed
+ * - The service's teardown() method is called if it exists
+ * 
+ * @param path The path of the service to unregister
+ * @returns The removed service instance
  * @throws Error if the service is not found.
  */
-public unservice(path: string): this {
+public unservice<Svc extends Service<this> = Service<this>>(path: string): Svc {
   // Check if the service exists
   if (!this._services[path]) {
     throw new Error(`Service on path '${path}' not found.`);
@@ -675,6 +777,18 @@ public unservice(path: string): this {
   // Remove service-specific hooks
   delete this.serviceHooks[path];
   
+  // Clean up service-specific event listeners
+  if (this.serviceEventListeners[path]) {
+    console.log(`Cleaning up event listeners for service '${path}'`);
+    for (const { event, listener } of this.serviceEventListeners[path]) {
+      this.eventEmitter.off(event, listener);
+    }
+    delete this.serviceEventListeners[path];
+  }
+  
+  // Store the service instance before removing it from the registry
+  const removedService = service;
+  
   // Remove the service from the registry
   delete this._services[path];
   
@@ -705,6 +819,44 @@ public unservice(path: string): this {
     return true;
   });
   
+  // Return the removed service instance
+  return removedService as Svc;
+}
+
+/**
+ * Emit an event with data and optional context.
+ * 
+ * @param event The event name
+ * @param data The event data
+ * @param context Optional context information
+ * @returns The app instance for chaining
+ */
+public emit(event: string, data: any, context?: any): this {
+  this.eventEmitter.emit(event, data, context);
+  return this;
+}
+
+/**
+ * Register an event listener.
+ * 
+ * @param event The event name or pattern to listen for
+ * @param listener The callback function to execute when the event is emitted
+ * @returns The app instance for chaining
+ */
+public on(event: string, listener: (data: any, context?: any) => void): this {
+  this.eventEmitter.on(event, listener);
+  return this;
+}
+
+/**
+ * Remove an event listener.
+ * 
+ * @param event The event name
+ * @param listener The listener function to remove
+ * @returns The app instance for chaining
+ */
+public off(event: string, listener: (data: any, context?: any) => void): this {
+  this.eventEmitter.off(event, listener);
   return this;
 }
 

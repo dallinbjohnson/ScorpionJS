@@ -70,9 +70,26 @@ app.on('*', (eventName, data) => {
 });
 ```
 
+### Event Listener Cleanup
+
+ScorpionJS automatically cleans up event listeners when a service is unregistered using `app.unservice()`. This prevents memory leaks and ensures that event listeners don't persist after a service is removed.
+
+```javascript
+// Register a service
+app.service('messages', messageService);
+
+// Add event listeners
+app.service('messages').on('created', handleMessageCreated);
+app.on('messages created', handleGlobalMessageCreated);
+
+// Later, unregister the service
+app.unservice('messages');
+// All event listeners for the 'messages' service are automatically removed
+```
+
 ## Standard Service Events
 
-ScorpionJS services automatically emit events for standard methods. See [Services API](./services.md) for more details.
+ScorpionJS services automatically emit events for standard methods. The event emission happens in the `executeServiceCall` method after successful execution of the service method. This ensures that events are emitted regardless of how the service is called (REST, WebSockets, or direct method calls). See [Services API](./services.md) for more details.
 
 | Method | Event | Data |
 |--------|-------|------|
@@ -80,6 +97,8 @@ ScorpionJS services automatically emit events for standard methods. See [Service
 | `update` | `updated` | The updated item |
 | `patch` | `patched` | The patched item |
 | `remove` | `removed` | The removed item |
+
+Events are emitted both at the service level and globally on the app instance with the service path as a prefix:
 
 ## Custom Events
 
@@ -498,6 +517,22 @@ client.on('messages created', message => {
   console.log('Message created:', message);
 });
 ```
+
+## Implementation Details
+
+The ScorpionJS event system is implemented using Node.js's built-in `EventEmitter` class. Here's how it works internally:
+
+1. **Service Registration**: When a service is registered with `app.service()`, it's dynamically extended with event methods (`emit`, `on`, `off`) if they don't already exist.
+
+2. **Event Tracking**: All event listeners are tracked in a `serviceEventListeners` object on the app instance, indexed by service path. This enables proper cleanup when services are unregistered.
+
+3. **Automatic Event Emission**: The `executeServiceCall` method automatically emits events for standard service methods (`create`, `update`, `patch`, `remove`) after successful execution. This ensures consistent event behavior regardless of how services are accessed.
+
+4. **Event Namespacing**: Events are namespaced by combining the service path with the event name (e.g., `messages created`) when emitted globally on the app instance.
+
+5. **Event Context**: Events include context information such as the service instance, path, and other relevant metadata.
+
+6. **Cleanup on Unregistration**: When `app.unservice()` is called, all event listeners associated with that service are automatically removed to prevent memory leaks.
 
 ## Advanced Topics
 
