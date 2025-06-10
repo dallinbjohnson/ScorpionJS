@@ -38,10 +38,22 @@ export interface ServiceMethods<A extends IScorpionApp<any> = IScorpionApp<any>,
 /**
  * A generic service interface that includes standard methods
  * and allows for any number of custom methods.
+ * All standard methods are optional to allow for more focused services.
  */
-export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> extends ServiceMethods<A, T, D> {
+export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> {
   app?: A; // Services often have a reference to the app
   setup?(app: A, path: string): void; // Optional setup method
+  teardown?(): void; // Optional teardown method for cleanup during unregistration
+  
+  // Standard methods - all optional
+  find?(params?: Params): Promise<T[] | any>;
+  get?(id: string | number, params?: Params): Promise<T | any>;
+  create?(data: D, params?: Params): Promise<T | any>;
+  update?(id: string | number, data: D, params?: Params): Promise<T | any>;
+  patch?(id: string | number, data: Partial<D>, params?: Params): Promise<T | any>;
+  remove?(id: string | number, params?: Params): Promise<T | any>;
+  
+  // Allow custom methods
   [key: string]: any;
 }
 

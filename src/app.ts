@@ -5,7 +5,7 @@ import { URL } from 'url';
 import { IScorpionApp, Service, ServiceOptions, Params, ScorpionRouteData, HookContext, HookObject, HookType, HooksApiConfig, StandardHookFunction, AroundHookFunction, NextFunction, StandardHookMethodConfig, AroundHookMethodConfig, StandardHookMethodConfigEntry, AroundHookMethodConfigEntry } from './types.js';
 import { runHooks } from './hooks.js';
 import { ScorpionError, NotFound, BadRequest } from './errors.js';
-import { createRouter, addRoute, findRoute } from 'rou3';
+import { createRouter, addRoute, findRoute, removeRoute } from 'rou3';
 
 // Interface for executeServiceCall options
 export interface ExecuteServiceCallOptions<A extends IScorpionApp<any>, Svc extends Service<A>> {
@@ -91,25 +91,8 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
           }
         }
         
-        // Construct the full route path
-        const buildRoutePath = (servicePath: string, segment: string): string => {
-          // Normalize segments
-          const normalizedServicePath = servicePath.startsWith('/') ? servicePath : `/${servicePath}`;
-          const normalizedSegment = segment ? 
-            (segment.startsWith('/') ? segment : `/${segment}`) : '';
-          
-          // Combine and clean up the path
-          let result = `${normalizedServicePath}${normalizedSegment}`;
-          result = result.replace(/\/\//g, '/'); // Remove double slashes
-          
-          // Handle trailing slashes and empty paths
-          if (result !== '/' && result.endsWith('/')) {
-            result = result.slice(0, -1);
-          }
-          return result || '/';
-        };
-        
-        const fullRoutePath = buildRoutePath(path, routePathSegment);
+        // Construct the full route path using the class method
+        const fullRoutePath = this._buildRoutePath(path, routePathSegment);
 
 
         console.log(`  Adding route: ${httpMethod} ${fullRoutePath} -> ${path}.${methodName}`);
@@ -627,6 +610,150 @@ private _setupServiceInstance<Svc extends Service<this>>(
   } else {
     (serviceInstance as any).app = this;
   }
+}
+
+/**
+ * Unregisters a service and removes all associated resources.
+ * 
+ * @param path The path of the service to unregister.
+ * @returns The ScorpionApp instance for chaining.
+ * @throws Error if the service is not found.
+ */
+public unservice(path: string): this {
+  // Check if the service exists
+  if (!this._services[path]) {
+    throw new Error(`Service on path '${path}' not found.`);
+  }
+
+  console.log(`Unregistering service on path '${path}'`);
+  
+  // Get the service instance before removing it
+  const service = this._services[path];
+  
+  // Allow service to clean up if it has a teardown method
+  if (typeof (service as any).teardown === 'function') {
+    try {
+      (service as any).teardown();
+    } catch (error) {
+      console.error(`Error during teardown of service '${path}':`, error);
+    }
+  }
+  
+  // We'll use the _buildRoutePath method for route path construction
+  
+  // Remove all routes associated with this service
+  // Standard methods
+  const standardMethods = [
+    { name: 'find', httpMethod: 'GET', segment: '' },
+    { name: 'get', httpMethod: 'GET', segment: ':id' },
+    { name: 'create', httpMethod: 'POST', segment: '' },
+    { name: 'update', httpMethod: 'PUT', segment: ':id' },
+    { name: 'patch', httpMethod: 'PATCH', segment: ':id' },
+    { name: 'remove', httpMethod: 'DELETE', segment: ':id' }
+  ];
+  
+  // Remove standard method routes
+  for (const method of standardMethods) {
+    if (typeof (service as any)[method.name] === 'function') {
+      const fullRoutePath = this._buildRoutePath(path, method.segment);
+      console.log(`Removing route: ${method.httpMethod} ${fullRoutePath}`);
+      removeRoute(this.router, method.httpMethod, fullRoutePath);
+    }
+  }
+  
+  // Remove custom method routes
+  for (const methodName in service) {
+    if (typeof (service as any)[methodName] === 'function' && 
+        !methodName.startsWith('_') && 
+        !standardMethods.some(m => m.name === methodName)) {
+      const fullRoutePath = this._buildRoutePath(path, methodName);
+      console.log(`Removing route: POST ${fullRoutePath}`);
+      removeRoute(this.router, 'POST', fullRoutePath);
+    }
+  }
+  
+  // Remove service-specific hooks
+  delete this.serviceHooks[path];
+  
+  // Remove the service from the registry
+  delete this._services[path];
+  
+  // Filter out any global or interceptor hooks that specifically target this service
+  this.globalHooks = this.globalHooks.filter(hook => {
+    // Keep hooks with wildcard pattern
+    if (hook.servicePathPattern === '*') return true;
+    
+    // Keep hooks that don't match this service path
+    if (hook.servicePathPattern && typeof hook.servicePathPattern === 'string') {
+      return !this._isPathMatch(path, hook.servicePathPattern);
+    }
+    
+    // Default to keeping the hook if we can't determine
+    return true;
+  });
+  
+  this.interceptorGlobalHooks = this.interceptorGlobalHooks.filter(hook => {
+    // Keep hooks with wildcard pattern
+    if (hook.servicePathPattern === '*') return true;
+    
+    // Keep hooks that don't match this service path
+    if (hook.servicePathPattern && typeof hook.servicePathPattern === 'string') {
+      return !this._isPathMatch(path, hook.servicePathPattern);
+    }
+    
+    // Default to keeping the hook if we can't determine
+    return true;
+  });
+  
+  return this;
+}
+
+/**
+ * Helper method to build a route path from a service path and segment.
+ * Normalizes paths and handles special cases.
+ * 
+ * @param servicePath The base service path
+ * @param segment The path segment to append (if any)
+ * @returns The normalized full route path
+ */
+private _buildRoutePath(servicePath: string, segment: string): string {
+  // Normalize segments
+  const normalizedServicePath = servicePath.startsWith('/') ? servicePath : `/${servicePath}`;
+  const normalizedSegment = segment ? 
+    (segment.startsWith('/') ? segment : `/${segment}`) : '';
+  
+  // Combine and clean up the path
+  let result = `${normalizedServicePath}${normalizedSegment}`;
+  result = result.replace(/\/\//g, '/'); // Remove double slashes
+  
+  // Handle trailing slashes and empty paths
+  if (result !== '/' && result.endsWith('/')) {
+    result = result.slice(0, -1);
+  }
+  return result || '/';
+}
+
+/**
+ * Helper method to check if a path matches a pattern.
+ * Supports simple glob-style pattern matching with * wildcard.
+ * 
+ * @param path The path to check
+ * @param pattern The pattern to match against
+ * @returns True if the path matches the pattern
+ */
+private _isPathMatch(path: string, pattern: string): boolean {
+  if (pattern === '*') return true;
+  if (pattern === path) return true;
+  
+  if (pattern.includes('*')) {
+    const regexPattern = pattern
+      .replace(/\./g, '\\.')
+      .replace(/\*/g, '.*');
+    const regex = new RegExp(`^${regexPattern}$`);
+    return regex.test(path);
+  }
+  
+  return false;
 }
 }
 

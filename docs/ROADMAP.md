@@ -31,7 +31,7 @@ A developer using ScorpionJS would expect:
 
     - [x] **3. Dynamic Service Registration, Unregistration, and Invocation:**
         *   [x] Implement `app.service('serviceName', serviceInstance, serviceOptions)` for adding services.
-        *   Implement `app.unservice('serviceName')` to remove a service and its associated resources (routes, hooks, event listeners).
+        *   [x] Implement `app.unservice('serviceName')` to remove a service and its associated resources (routes, hooks, event listeners).
         *   [x] Develop a dynamic internal mechanism to dispatch calls to service methods, capable of handling runtime service changes.
         *   [x] Allow per-service configuration via `serviceOptions`.
 
