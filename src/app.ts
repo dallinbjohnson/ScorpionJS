@@ -1,9 +1,11 @@
 // src/app.ts
 
 import * as http from 'http';
+import * as fs from 'fs';
+import * as path from 'path';
 import { URL } from 'url';
 import { EventEmitter } from 'events';
-import { IScorpionApp, Service, ServiceOptions, Params, ScorpionRouteData, HookContext, HookObject, HookType, HooksApiConfig, StandardHookFunction, AroundHookFunction, NextFunction, StandardHookMethodConfig, AroundHookMethodConfig, StandardHookMethodConfigEntry, AroundHookMethodConfigEntry } from './types.js';
+import { IScorpionApp, Service, ServiceOptions, Params, ScorpionRouteData, HookContext, HookObject, HookType, HooksApiConfig, StandardHookFunction, AroundHookFunction, NextFunction, StandardHookMethodConfig, AroundHookMethodConfig, StandardHookMethodConfigEntry, AroundHookMethodConfigEntry, ScorpionConfig } from './types.js';
 import { runHooks } from './hooks.js';
 import { ScorpionError, NotFound, BadRequest } from './errors.js';
 import { createRouter, addRoute, findRoute, removeRoute } from 'rou3';
@@ -35,8 +37,175 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
   private eventEmitter: EventEmitter = new EventEmitter();
   private serviceEventListeners: Record<string, Array<{event: string, listener: (...args: any[]) => void}>> = {};
 
-  constructor() {
+  // Configuration system
+  private _config: ScorpionConfig = {};
+
+  constructor(config: ScorpionConfig = {}) {
     this.router = createRouter<ScorpionRouteData>();
+    this._config = this._loadConfig(config);
+  }
+
+  /**
+   * Loads configuration from various sources and merges them with the provided config.
+   * Priority order (highest to lowest):
+   * 1. Programmatically provided config (passed to createApp or constructor)
+   * 2. Environment variables
+   * 3. Configuration files (scorpion.config.json)
+   * 4. Default configuration
+   * 
+   * @param config The configuration object provided programmatically
+   * @returns The merged configuration object
+   */
+  private _loadConfig(config: ScorpionConfig): ScorpionConfig {
+    // Start with default configuration
+    const defaultConfig: ScorpionConfig = {
+      env: process.env.NODE_ENV || 'development',
+      server: {
+        port: 3030,
+        host: 'localhost',
+        cors: true
+      }
+    };
+
+    // Try to load configuration from file
+    let fileConfig: ScorpionConfig = {};
+    try {
+      // Look for config file in current working directory
+      const configPath = path.join(process.cwd(), 'scorpion.config.json');
+      if (fs.existsSync(configPath)) {
+        const configContent = fs.readFileSync(configPath, 'utf8');
+        fileConfig = JSON.parse(configContent);
+        console.log(`[ScorpionApp] Loaded configuration from ${configPath}`);
+      }
+    } catch (error) {
+      console.warn('[ScorpionApp] Error loading configuration file:', error);
+    }
+
+    // Load environment-specific configuration if available
+    const env = process.env.NODE_ENV || 'development';
+    let envConfig: ScorpionConfig = {};
+    try {
+      const envConfigPath = path.join(process.cwd(), `scorpion.${env}.config.json`);
+      if (fs.existsSync(envConfigPath)) {
+        const envConfigContent = fs.readFileSync(envConfigPath, 'utf8');
+        envConfig = JSON.parse(envConfigContent);
+        console.log(`[ScorpionApp] Loaded ${env} configuration from ${envConfigPath}`);
+      }
+    } catch (error) {
+      console.warn(`[ScorpionApp] Error loading ${env} configuration file:`, error);
+    }
+
+    // Load environment variables with SCORPION_ prefix
+    const envVarConfig: ScorpionConfig = {};
+    Object.keys(process.env).forEach(key => {
+      if (key.startsWith('SCORPION_')) {
+        const configKey = key.substring(9).toLowerCase().split('_'); // Fix: 9 characters to remove 'SCORPION_'
+        let current = envVarConfig;
+        
+        // Handle nested properties (e.g., SCORPION_SERVER_PORT)
+        for (let i = 0; i < configKey.length - 1; i++) {
+          const segment = configKey[i];
+          current[segment] = current[segment] || {};
+          current = current[segment];
+        }
+        
+        // Set the value, attempting to parse it as JSON if possible
+        const value = process.env[key];
+        try {
+          // Try to parse as JSON for objects, arrays, booleans, and numbers
+          current[configKey[configKey.length - 1]] = JSON.parse(value as string);
+        } catch (e) {
+          // If parsing fails, use the raw string value
+          current[configKey[configKey.length - 1]] = value;
+        }
+      }
+    });
+    
+    // Debug logging for environment variables
+    console.log('[ScorpionApp] Environment variables config:', JSON.stringify(envVarConfig, null, 2));
+
+    // Merge configurations with correct precedence
+    // (default < file < env-specific file < env vars < programmatic config)
+    return this._deepMerge(
+      defaultConfig,
+      fileConfig,
+      envConfig,
+      envVarConfig,
+      config
+    );
+  }
+
+  /**
+   * Deep merges multiple objects, with later objects taking precedence.
+   * 
+   * @param objects The objects to merge
+   * @returns The merged object
+   */
+  private _deepMerge(...objects: Record<string, any>[]): Record<string, any> {
+    const result: Record<string, any> = {};
+    
+    for (const obj of objects) {
+      if (!obj) continue;
+      
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+            result[key] = this._deepMerge(result[key] || {}, obj[key]);
+          } else {
+            result[key] = obj[key];
+          }
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * Gets a configuration value at the specified path.
+   * 
+   * @param path The dot-notation path to the configuration value
+   * @returns The configuration value or undefined if not found
+   */
+  private _getConfigValue(path: string): any {
+    const parts = path.split('.');
+    let current: any = this._config;
+    
+    for (const part of parts) {
+      if (current === undefined || current === null) {
+        return undefined;
+      }
+      current = current[part];
+    }
+    
+    return current;
+  }
+
+  /**
+   * Sets a configuration value at the specified path.
+   * 
+   * @param path The dot-notation path to set the value at
+   * @param value The value to set
+   */
+  private _setConfigValue(path: string, value: any): void {
+    const parts = path.split('.');
+    let current: any = this._config;
+    
+    // Navigate to the parent of the property to set
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!(part in current) || current[part] === null) {
+        current[part] = {};
+      } else if (typeof current[part] !== 'object') {
+        // If the current path is not an object, make it one
+        current[part] = {};
+      }
+      current = current[part];
+    }
+    
+    // Set the value on the parent
+    const lastPart = parts[parts.length - 1];
+    current[lastPart] = value;
   }
 
   /**
@@ -374,6 +543,39 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
     }
   }
 
+  /**
+   * Gets a configuration value at the specified path.
+   * 
+   * @param path The dot-notation path to the configuration value.
+   * @returns The configuration value at the specified path.
+   */
+  public get<T = any>(path: string): T {
+    return this._getConfigValue(path) as T;
+  }
+
+  /**
+   * Sets a configuration value at the specified path.
+   * 
+   * @param path The dot-notation path to set the configuration value at.
+   * @param value The value to set.
+   * @returns The ScorpionApp instance for chaining.
+   */
+  public set<T = any>(path: string, value: T): this {
+    this._setConfigValue(path, value);
+    return this;
+  }
+
+  /**
+   * Configures the application with a plugin function.
+   *
+   * @param fn The plugin function to apply.
+   * @returns The ScorpionApp instance for chaining.
+   */
+  public configure(fn: (app: this) => void): this {
+    fn(this);
+    return this;
+  }
+
   // Basic request body parser for JSON
   private async parseRequestBody(req: http.IncomingMessage): Promise<any> {
     return new Promise((resolve, reject) => {
@@ -404,21 +606,40 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
    * @param callback Optional callback to run when the server starts
    * @returns The HTTP server instance
    */
-  public listen(port: number, callback?: () => void): http.Server {
-    const server = http.createServer(async (req: http.IncomingMessage, res: http.ServerResponse) => {
+  public listen(port?: number, host?: string): http.Server {
+    // Use configuration values if parameters are not provided
+    const serverPort = port || this._config.server?.port || 3030;
+    const serverHost = host || this._config.server?.host || 'localhost';
+    const server = http.createServer((req, res) => {
+      // Apply CORS if configured
+      if (this._config.server?.cors) {
+        const corsConfig = typeof this._config.server.cors === 'object' 
+          ? this._config.server.cors 
+          : { origin: '*', methods: 'GET,HEAD,PUT,PATCH,POST,DELETE' };
+          
+        res.setHeader('Access-Control-Allow-Origin', corsConfig.origin || '*');
+        res.setHeader('Access-Control-Allow-Methods', corsConfig.methods || 'GET,HEAD,PUT,PATCH,POST,DELETE');
+        
+        if (corsConfig.headers) {
+          res.setHeader('Access-Control-Allow-Headers', corsConfig.headers);
+        }
+        
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+      }
       try {
-        await this._handleHttpRequest(req, res);
+        this._handleHttpRequest(req, res);
       } catch (error: any) {
         // This catch block is a last resort if _handleHttpRequest throws
         this._sendErrorResponse(res, error);
       }
     });
 
-    server.listen(port, () => {
-      console.log(`ScorpionJS application listening on port ${port}`);
-      if (callback) {
-        callback();
-      }
+    server.listen(serverPort, serverHost, () => {
+      console.log(`Scorpion app listening at http://${serverHost}:${serverPort}`);
     });
     return server;
   }
@@ -918,7 +1139,9 @@ private _isPathMatch(path: string, pattern: string): boolean {
 
 /**
  * Creates a new ScorpionJS application instance.
+ * 
+ * @param config Configuration options for the ScorpionJS application
  */
-export const createApp = (): ScorpionApp<any> => {
-  return new ScorpionApp();
+export const createApp = (config: ScorpionConfig = {}): ScorpionApp<any> => {
+  return new ScorpionApp(config);
 };

@@ -10,18 +10,28 @@ When creating a ScorpionJS application, you can provide configuration options:
 import { createApp } from 'scorpionjs';
 
 const app = createApp({
-  // Basic configuration
-  name: 'my-app',
-  version: '1.0.0',
-  description: 'My ScorpionJS application',
-  
   // Environment
-  env: process.env.NODE_ENV || 'development',
+  env: 'production',
   
-  // Logging
-  logger: {
-    level: 'info',
-    pretty: true
+  // Server configuration
+  server: {
+    port: 8080,
+    host: '0.0.0.0',
+    cors: {
+      origin: '*',
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE'
+    }
+  },
+  
+  // Database configuration
+  database: {
+    client: 'pg',
+    connection: {
+      host: 'localhost',
+      user: 'postgres',
+      password: 'secret',
+      database: 'my_app'
+    }
   }
 });
 ```
@@ -32,12 +42,15 @@ const app = createApp({
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `name` | String | `'scorpion-app'` | Name of the application |
-| `version` | String | `'0.1.0'` | Version of the application |
-| `description` | String | `''` | Description of the application |
-| `env` | String | `'development'` | Environment (development, production, test) |
-| `nodeID` | String | Auto-generated | Unique identifier for this node |
-| `debug` | Boolean | `false` | Enable debug mode |
+| `env` | String | `process.env.NODE_ENV || 'development'` | Environment (development, production, test) |
+
+### Server Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `server.port` | Number | `3030` | Port for the HTTP server |
+| `server.host` | String | `'localhost'` | Host for the HTTP server |
+| `server.cors` | Boolean/Object | `true` | CORS configuration (true for defaults, object for custom settings) |
 
 ### Logging Options
 
@@ -201,200 +214,233 @@ const app = createApp({
 
 ### Loading Configuration
 
-ScorpionJS provides methods to load configuration from different sources:
+ScorpionJS automatically loads configuration from multiple sources with the following precedence (highest to lowest):
+
+1. Configuration object passed to `createApp()` or the constructor
+2. Environment variables with `SCORPION_` prefix
+3. Environment-specific configuration file (`scorpion.{env}.config.json`)
+4. Default configuration file (`scorpion.config.json`)
+5. Default values built into the framework
 
 ```javascript
-import { createApp, loadConfig } from 'scorpionjs';
+import { createApp } from 'scorpionjs';
 
-// Load from file
-const config = loadConfig('./config.json');
-
-// Load from environment variables
-const envConfig = loadConfig({
-  source: 'env',
-  prefix: 'SCORPION_'
+// Configuration will be automatically loaded from all sources
+const app = createApp({
+  // These values will override any from other sources
+  server: {
+    port: 8080
+  }
 });
-
-// Load from multiple sources with merging
-const mergedConfig = loadConfig([
-  './config.json',
-  './config.local.json',
-  { source: 'env', prefix: 'SCORPION_' }
-]);
-
-// Create app with loaded config
-const app = createApp(mergedConfig);
 ```
 
 ### Configuration Files
 
-ScorpionJS supports different configuration file formats:
+ScorpionJS looks for configuration files in the current working directory:
 
-**JSON**
+**JSON Format**
 
+`scorpion.config.json`:
 ```json
 {
-  "name": "my-app",
-  "version": "1.0.0",
-  "logger": {
-    "level": "info"
+  "env": "development",
+  "server": {
+    "port": 3030,
+    "host": "localhost",
+    "cors": true
   },
-  "transports": {
-    "rest": {
-      "port": 3000
+  "database": {
+    "client": "sqlite3",
+    "connection": {
+      "filename": "./dev.sqlite3"
     }
   }
 }
 ```
 
-**JavaScript**
-
-```javascript
-// config.js
-module.exports = {
-  name: 'my-app',
-  version: '1.0.0',
-  logger: {
-    level: process.env.LOG_LEVEL || 'info'
-  },
-  transports: {
-    rest: {
-      port: process.env.PORT || 3000
-    }
-  }
-};
-```
-
-**YAML**
-
-```yaml
-# config.yaml
-name: my-app
-version: 1.0.0
-logger:
-  level: info
-transports:
-  rest:
-    port: 3000
-```
-
 ### Environment-specific Configuration
 
-ScorpionJS supports environment-specific configuration:
+ScorpionJS automatically loads environment-specific configuration files. For example, if `NODE_ENV=production`, it will look for `scorpion.production.config.json`:
 
-```javascript
-import { createApp, loadConfig } from 'scorpionjs';
-
-// Load base config
-const baseConfig = loadConfig('./config.json');
-
-// Load environment-specific config
-const env = process.env.NODE_ENV || 'development';
-const envConfig = loadConfig(`./config.${env}.json`);
-
-// Merge configs
-const config = {
-  ...baseConfig,
-  ...envConfig,
-  env
-};
-
-// Create app with merged config
-const app = createApp(config);
+```json
+{
+  "server": {
+    "port": 80,
+    "host": "0.0.0.0"
+  },
+  "database": {
+    "client": "pg",
+    "connection": {
+      "host": "db.example.com",
+      "user": "app",
+      "password": "${DB_PASSWORD}",
+      "database": "production_db"
+    }
+  }
+}
 ```
+
+### Environment Variables
+
+ScorpionJS automatically loads configuration from environment variables with the `SCORPION_` prefix. Environment variables are converted to nested configuration properties using underscores as separators:
+
+```bash
+# These environment variables:
+SCORPION_SERVER_PORT=8080
+SCORPION_SERVER_HOST=0.0.0.0
+SCORPION_DATABASE_CLIENT=pg
+SCORPION_DATABASE_CONNECTION_HOST=db.example.com
+
+# Will be converted to this configuration:
+{
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0"
+  },
+  "database": {
+    "client": "pg",
+    "connection": {
+      "host": "db.example.com"
+    }
+  }
+}
+```
+
+Values are automatically parsed as JSON if possible, so you can use `SCORPION_SERVER_CORS=true` or `SCORPION_SERVER_PORT=8080` and they will be converted to boolean and number types respectively.
 
 ## Runtime Configuration
 
 ### Getting Configuration
 
 ```javascript
-// Get the entire configuration
-const config = app.get('config');
+// Get a specific configuration value using dot notation
+const port = app.get('server.port');
+const dbClient = app.get('database.client');
 
-// Get a specific configuration value
-const port = app.get('transports.rest.port');
-const logLevel = app.get('logger.level');
+// Get a nested configuration object
+const serverConfig = app.get('server');
+console.log(serverConfig.port); // 3030
+
+// Get a value with a default if not found
+const timeout = app.get('server.timeout') || 5000;
 ```
 
 ### Setting Configuration
 
 ```javascript
-// Set a configuration value
-app.set('logger.level', 'debug');
+// Set a configuration value using dot notation
+app.set('server.port', 8080);
 
-// Set multiple configuration values
-app.set({
-  'logger.level': 'debug',
-  'transports.rest.port': 4000
+// Set a nested configuration object
+app.set('database', {
+  client: 'mysql',
+  connection: {
+    host: 'localhost',
+    user: 'root',
+    password: 'secret',
+    database: 'my_app'
+  }
+});
+
+// Chain multiple set operations
+app.set('server.port', 8080)
+   .set('server.host', '0.0.0.0');
+```
+
+### Using Configuration in Services
+
+Services can access the application configuration through the `app` reference:
+
+```javascript
+class MyService {
+  setup(app) {
+    this.app = app;
+    this.dbClient = app.get('database.client');
+    this.serverPort = app.get('server.port');
+  }
+  
+  async find(params) {
+    // Use configuration values
+    const pageSize = this.app.get('pagination.defaultSize') || 10;
+    // ...
+  }
+}
+```
+
+## Configuration in Plugins
+
+Plugins can access and modify the application configuration:
+
+```javascript
+// my-plugin.js
+export default function myPlugin(options = {}) {
+  return function(app) {
+    // Get existing configuration
+    const serverPort = app.get('server.port');
+    
+    // Set new configuration values
+    app.set('myPlugin', {
+      enabled: options.enabled !== false,
+      timeout: options.timeout || 5000
+    });
+    
+    // Use configuration values
+    console.log(`Plugin initialized with port ${serverPort}`);
+  };
+}
+
+// Using the plugin
+import { createApp } from 'scorpionjs';
+import myPlugin from './my-plugin';
+
+const app = createApp();
+app.configure(myPlugin({ timeout: 10000 }));
+```
+
+## Configuration Best Practices
+
+### Sensitive Information
+
+Never store sensitive information like passwords or API keys directly in your configuration files. Instead:
+
+1. Use environment variables (`SCORPION_DATABASE_PASSWORD=secret`)
+2. Use separate environment-specific configuration files that are not committed to version control
+3. Consider using a secrets management solution
+
+### Default Values
+
+Always provide sensible defaults in your code when accessing configuration:
+
+```javascript
+// Good: Provides a default value
+const timeout = app.get('server.timeout') || 5000;
+
+// Better: Destructuring with defaults
+const { port = 3030, host = 'localhost' } = app.get('server') || {};
+```
+
+### Configuration Structure
+
+Organize your configuration in logical groups:
+
+```javascript
+// Good structure
+const app = createApp({
+  server: { /* server config */ },
+  database: { /* database config */ },
+  auth: { /* authentication config */ },
+  email: { /* email service config */ }
 });
 ```
 
-### Configuration Hooks
+## Future Enhancements
 
-```javascript
-// Hook that runs when configuration changes
-app.hooks({
-  configChanged: {
-    'logger.level': async (newValue, oldValue, app) => {
-      console.log(`Log level changed from ${oldValue} to ${newValue}`);
-      // Update logger
-      app.logger.level = newValue;
-    }
-  }
-});
-```
+The following configuration features are planned for future releases:
 
-## Configuration Plugins
-
-ScorpionJS supports configuration plugins. See [Plugins & Extensions](./plugins.md) for details.
-
-```javascript
-import { createApp } from 'scorpionjs';
-import configRedis from 'scorpionjs-config-redis';
-
-const app = createApp();
-
-// Use Redis for distributed configuration
-app.configure(configRedis({
-  host: 'localhost',
-  port: 6379,
-  keyPrefix: 'config:',
-  watchChanges: true
-}));
-
-// Configuration will be loaded from Redis and changes will be watched
-```
-
-## Secrets Management
-
-ScorpionJS provides secure secrets management:
-
-```javascript
-import { createApp } from 'scorpionjs';
-import secrets from 'scorpionjs-secrets';
-
-const app = createApp();
-
-// Configure secrets manager
-app.configure(secrets({
-  provider: 'vault',  // 'vault', 'aws-secrets-manager', 'env', etc.
-  options: {
-    address: 'http://localhost:8200',
-    token: process.env.VAULT_TOKEN,
-    path: 'secret/my-app'
-  }
-}));
-
-// Access secrets
-const dbPassword = await app.secrets.get('db.password');
-
-// Use secrets in configuration
-app.set('database.password', await app.secrets.get('db.password'));
-```
-
-## Configuration Validation
-
-ScorpionJS can validate your configuration:
+1. Schema validation for configuration
+2. Configuration watchers for real-time updates
+3. Distributed configuration with external stores (Redis, etcd, etc.)
+4. Secrets management integration
 
 ```javascript
 import { createApp, validateConfig } from 'scorpionjs';

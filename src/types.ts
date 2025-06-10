@@ -2,12 +2,37 @@
 import { ScorpionError } from './errors.js';
 
 /**
+ * Configuration options for creating a ScorpionJS application
+ */
+export interface ScorpionConfig {
+  // Environment settings
+  env?: string;
+  // Server configuration
+  server?: {
+    port?: number;
+    host?: string;
+    cors?: boolean | Record<string, any>;
+    bodyParser?: boolean | Record<string, any>;
+  };
+  // Authentication configuration
+  auth?: Record<string, any>;
+  // Database configuration
+  database?: Record<string, any>;
+  // Custom configuration
+  [key: string]: any;
+}
+
+/**
  * Base interface for a Scorpion application instance.
  * Used to break circular dependencies for type information.
  */
 export interface IScorpionApp<AppServices extends Record<string, Service<any>> = Record<string, any>> {
   services: AppServices;
   _isScorpionAppBrand: never; // Ensures nominal typing if structural typing becomes an issue
+  
+  // Configuration methods
+  get<T = any>(path: string): T;
+  set<T = any>(path: string, value: T): this;
 }
 
 
