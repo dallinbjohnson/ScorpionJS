@@ -1,0 +1,2 @@
+import { IScorpionApp, Service, HookContext, HookObject } from './types.js';
+export declare function runHooks<A extends IScorpionApp<any>, Svc extends Service<A> | undefined = undefined>(initialContext: HookContext<A, Svc>, globalHooks: HookObject<A, Service<A> | undefined>[], interceptorGlobalHooks: HookObject<A, Service<A> | undefined>[], applicableServiceHooks: HookObject<A, Svc>[]): Promise<HookContext<A, Svc>>;

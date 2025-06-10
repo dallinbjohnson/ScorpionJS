@@ -1,0 +1,32 @@
+{
+  "name": "scorpionjs",
+  "version": "0.0.1",
+  "description": "A powerful, flexible framework for building real-time APIs and microservices.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "NODE_OPTIONS='--loader ts-node/esm' mocha 'test/**/*.test.ts'"
+  },
+  "keywords": [
+    "framework",
+    "real-time",
+    "api",
+    "microservices"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/chai": "^5.2.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.15.30",
+    "chai": "^5.2.0",
+    "mocha": "^11.6.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "rou3": "^0.6.3"
+  }
+}
