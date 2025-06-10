@@ -91,6 +91,19 @@ export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = an
 }
 
 /**
+ * Represents a service that has been registered with the app via app.use().
+ * This extends the base Service interface but guarantees that certain methods
+ * like hooks() are always available, as they are added during registration.
+ */
+export interface RegisteredService<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> extends Service<A, T, D> {
+  // These methods are guaranteed to exist after service registration
+  hooks(config: HooksApiConfig<any, any>): this;
+  emit(event: string, data: any, context?: any): this;
+  on(event: string, listener: (...args: any[]) => void): this;
+  off(event: string, listener: (...args: any[]) => void): this;
+}
+
+/**
  * Options that can be passed when registering a service.
  * For now, it's a placeholder for future options like schemas.
  */

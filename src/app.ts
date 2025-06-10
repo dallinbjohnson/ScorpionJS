@@ -7,6 +7,7 @@ import { URL } from "url";
 import { EventEmitter } from "events";
 import {
   IScorpionApp,
+  RegisteredService,
   Service,
   ServiceOptions,
   Params,
@@ -261,18 +262,24 @@ export class ScorpionApp<
 
   /**
    * Retrieves a service registered at the given path.
+   * Throws an error if the service doesn't exist.
+   * 
+   * The returned service is guaranteed to have hooks, emit, on, and off methods
+   * as they are added during registration via app.use().
    *
    * @param path The path of the service to retrieve (e.g., 'messages').
-   * @returns The service instance.
+   * @returns The registered service instance with guaranteed hooks method.
    */
-  public service<Svc extends Service<this>>(path: string): Svc {
+  public service<Svc extends Service<this>>(path: string): RegisteredService<this> & Svc {
     const service = this._services[path];
 
     if (!service) {
       throw new Error(`Service on path '${path}' not found.`);
     }
 
-    return service as Svc;
+    // The service has been enhanced with hooks, emit, on, and off methods during registration
+    // so we can safely assert it as a RegisteredService & Svc
+    return service as RegisteredService<this> & Svc;
   }
 
   /**
@@ -537,55 +544,6 @@ export class ScorpionApp<
     return this;
   }
 
-  /**
-   * Adds a global hook to the application.
-   * This method is kept for backward compatibility.
-   * For new hook registrations, prefer using the `app.hooks()` method with a configuration object.
-   *
-   * @param hookInput The hook function to execute or a HookObject.
-   * @param options Options for the hook, such as type, servicePathPattern, and methodPattern.
-   *                These options are ignored if a HookObject is passed as the first argument.
-   *                If only a function is passed, it defaults to a 'before' hook with '*' patterns.
-   * @returns The ScorpionApp instance for chaining.
-   */
-  public addHook(
-    hookInput:
-      | (
-          | StandardHookFunction<this, Service<this> | undefined>
-          | AroundHookFunction<this, Service<this> | undefined>
-        )
-      | HookObject<this, Service<this> | undefined>,
-    options?: {
-      type?: HookType;
-      servicePathPattern?: string;
-      methodPattern?: string;
-    }
-  ): this {
-    if (typeof hookInput === "function") {
-      const type = options?.type || "before";
-      const servicePathPattern = options?.servicePathPattern || "*";
-      const methodPattern = options?.methodPattern || "*";
-
-      const newHook: HookObject<this, Service<this> | undefined> = {
-        fn: hookInput,
-        type: type,
-        servicePathPattern: servicePathPattern,
-        methodPattern: methodPattern,
-      };
-      this.globalHooks.push(newHook);
-    } else {
-      // hookInput is HookObject<this, Service<this> | undefined>
-      this.globalHooks.push(hookInput);
-    }
-    return this;
-  }
-
-  /**
-   * Registers hooks globally using a structured configuration object.
-   *
-   * @param config The hook configuration object.
-   * @returns The ScorpionApp instance for chaining.
-   */
   /**
    * Registers global hooks using a structured configuration object.
    *
