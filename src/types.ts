@@ -178,7 +178,14 @@ export interface ServiceOptions<A extends IScorpionApp<any> = IScorpionApp<any>,
   methods?: {
     [methodName: string]: MethodRoutingOptions;
   };
-  hooks?: HooksApiConfig<A, Svc>;
+  // Service-specific validator
+  validator?: {
+    validate: (schema: any, data: any, options?: any) => { 
+      valid: boolean; 
+      errors?: any; 
+      data?: any; 
+    };
+  };
 }
 
 /**

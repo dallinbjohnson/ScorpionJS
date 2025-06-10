@@ -55,7 +55,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('messages', service);
+      app.use('messages', service);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -94,7 +94,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('messages', service);
+      app.use('messages', service);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -133,7 +133,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('messages', service);
+      app.use('messages', service);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -172,7 +172,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('messages', service);
+      app.use('messages', service);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -220,7 +220,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('payments', service);
+      app.use('payments', service);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -276,7 +276,7 @@ describe('Event System', () => {
       });
       
       // Register the service with the app
-      app.service('test-events', service as any);
+      app.use('test-events', service as any);
       
       // Track if we received the event
       let eventReceived = false;
@@ -309,7 +309,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('messages', service);
+      app.use('messages', service);
       
       // Create a promise that resolves when the event is emitted at the app level
       const eventPromise = new Promise(resolve => {
@@ -345,7 +345,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('messages', service);
+      app.use('messages', service);
       
       // Add an event listener
       const listener = () => {};
@@ -355,7 +355,7 @@ describe('Event System', () => {
       expect((app as any).serviceEventListeners['messages'].length).to.equal(1);
       
       // Unregister the service
-      app.unservice('messages');
+      app.unuse('messages');
       
       // Verify the listeners are cleaned up
       // The app might still have a reference to the service path, but it should be empty

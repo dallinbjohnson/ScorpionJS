@@ -41,7 +41,7 @@ describe('Event System', () => {
       });
       
       // Cast to any to bypass type checking since we're in a test environment
-      app.service('messages', service as any);
+      app.use('messages', service as any);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -84,7 +84,7 @@ describe('Event System', () => {
       });
       
       // Cast to any to bypass type checking since we're in a test environment
-      app.service('messages', service as any);
+      app.use('messages', service as any);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -124,7 +124,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('messages', service);
+      app.use('messages', service);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -164,7 +164,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('messages', service);
+      app.use('messages', service);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -216,7 +216,7 @@ describe('Event System', () => {
         }
       });
       
-      app.service('payments', service as any);
+      app.use('payments', service as any);
       
       // Create a promise that resolves when the event is emitted
       const eventPromise = new Promise(resolve => {
@@ -264,7 +264,7 @@ describe('Event System', () => {
         }
       };
       
-      app.service('messages', service);
+      app.use('messages', service);
       
       // Create a promise that resolves when the event is emitted at the app level
       const eventPromise = new Promise(resolve => {
@@ -298,7 +298,7 @@ describe('Event System', () => {
     } as any;
     
     // Register the service
-    app.service('temp', service);
+    app.use('temp', service);
     
     // Service should have event methods
     expect(service.on).to.be.a('function');
@@ -311,7 +311,7 @@ describe('Event System', () => {
     expect((app as any).serviceEventListeners['temp'].length).to.equal(1);
     
     // Unregister the service
-    app.unservice('temp');
+    app.unuse('temp');
     
     // Verify the listeners are cleaned up
     expect((app as any).serviceEventListeners['temp']).to.be.undefined;

@@ -9,6 +9,7 @@ import { IScorpionApp, Service, ServiceOptions, Params, ScorpionRouteData, HookC
 import { runHooks } from './hooks.js';
 import { ScorpionError, NotFound, BadRequest } from './errors.js';
 import { createRouter, addRoute, findRoute, removeRoute } from 'rou3';
+import { validateSchema, registerSchemas } from './schema.js';
 
 // Interface for executeServiceCall options
 export interface ExecuteServiceCallOptions<A extends IScorpionApp<any>, Svc extends Service<A>> {
@@ -208,25 +209,54 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
     current[lastPart] = value;
   }
 
+    /**
+   * Retrieves a service registered at the given path.
+   *
+   * @param path The path of the service to retrieve (e.g., 'messages').
+   * @returns The service instance.
+   */
+  public service<Svc extends Service<this>>(path: string): Svc {
+    const service = this._services[path];
+
+    if (!service) {
+      throw new Error(`Service on path '${path}' not found.`);
+    }
+
+    return service as Svc;
+  }
+
+
   /**
    * Registers a service on a given path.
    *
    * @param path The path to register the service on (e.g., 'messages').
    * @param service The service object or class instance.
-   * @param options Additional options for the service.
+   * @param options Additional options for the service (e.g., schemas, custom routing, validator). Hooks should be configured using `app.service(path).hooks(...)`.
    * @returns The ScorpionApp instance for chaining.
    */
-  public service<SvcType extends Service<this>>(
+  public use<SvcType extends Service<this>>(
     path: string,
-    service: SvcType,
+    service: SvcType, // service is now non-optional for registration
     options?: ServiceOptions<this, SvcType>
   ): this {
+    // This 'use' method is purely for registration.
     if (this._services[path]) {
       throw new Error(`Service on path '${path}' is already registered.`);
     }
 
+    if (!service) {
+      throw new Error(`Cannot register undefined service at path '${path}'.`);
+    }
+
     console.log(`Registering service on path '${path}'`);
     this._services[path] = service;
+
+    // Perform service setup (inlined from _setupServiceInstance)
+    if (typeof (service as any).setup === 'function') {
+      (service as any).setup(this, path);
+    } else {
+      (service as any).app = this;
+    }
   
     // Initialize service event listeners array
     this.serviceEventListeners[path] = [];
@@ -280,6 +310,23 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
       
       return service;
     };
+    
+    // Add hooks method to the service to match documentation
+    serviceObj.hooks = (config: HooksApiConfig<this, SvcType>) => {
+      if (!this.serviceHooks[path]) {
+        this.serviceHooks[path] = [];
+      }
+      
+      // Process hooks configuration for this service
+      this._processHookConfig(
+        config as unknown as HooksApiConfig<this, Service<this>>,
+        path, // Exact match for service-specific hooks
+        this.serviceHooks[path],
+        `[Service.hooks] service '${path}'` // Context for error messages
+      );
+      
+      return service;
+    };
 
     // Register routes for all service methods (standard and custom)
     for (const methodName in service) {
@@ -327,20 +374,17 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
       }
     }
 
-    // Process and store service-specific hooks from HooksApiConfig
-    if (options?.hooks) {
-      if (!this.serviceHooks[path]) {
-        this.serviceHooks[path] = [];
-      }
+
+    // Register schemas if provided (for introspection only)
+    if (options?.schemas) {
+      console.log(`  Registering schemas for service '${path}'`);
       
-      // Process hooks configuration for this service
-      // Use type assertion to handle the generic variance issue
-      this._processHookConfig(
-        options.hooks as unknown as HooksApiConfig<this, Service<this>>,
-        path, // Exact match for service-specific hooks
-        this.serviceHooks[path],
-        `[ScorpionApp.service] service '${path}'` // Context for error messages
-      );
+      // Register schemas on the service for introspection
+      // Developers need to manually apply validation hooks in their service configuration
+      if (service) {
+        registerSchemas(service, options.schemas);
+      }
+
     }
 
     return this;
@@ -448,20 +492,6 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
     }
     
     return this;
-  }
-
-  /**
-   * Retrieves a registered service by its path.
-   *
-   * @param path The path of the service to retrieve.
-   * @returns The service instance.
-   */
-  public getService<Svc extends Service>(path: string): Svc | undefined {
-    const service = this._services[path] as Svc | undefined;
-    if (!service) {
-      throw new Error(`Service on path '${path}' not found.`);
-    }
-    return service;
   }
 
   /**
@@ -670,7 +700,7 @@ export class ScorpionApp<AppServices extends Record<string, Service<any>> = Reco
 
     // Get service and method information
     const { servicePath, methodName } = routeMatch.data;
-    const service = this.getService<Service<this>>(servicePath);
+    const service = this.service<Service<this>>(servicePath);
     const routeParams = routeMatch.params || {};
     const params: Params = { route: routeParams, query: queryParams };
 
@@ -826,9 +856,7 @@ public async executeServiceCall<Svc extends Service<this>>(
     );
   }
 
-  // Setup service instance if not already done
-  this._setupServiceInstance(serviceInstance, servicePath);
-  
+
   // Create initial context for hook execution
   const initialContext: HookContext<this, Svc> = {
     app: this,
@@ -916,40 +944,23 @@ private async executeHooks<Svc extends Service<this> | undefined>(
 }
 
 /**
- * Setup a service instance by calling its setup method or setting its app property.
- * 
- * @param serviceInstance The service instance to setup
- * @param servicePath The path of the service
- */
-private _setupServiceInstance<Svc extends Service<this>>(
-  serviceInstance: Svc,
-  servicePath: string
-): void {
-  if (typeof (serviceInstance as any).setup === 'function') {
-    (serviceInstance as any).setup(this, servicePath);
-  } else {
-    (serviceInstance as any).app = this;
-  }
-}
-
-/**
- * Unregister a service from the application.
- * This removes the service from the registry, cleans up any hooks associated with it,
- * removes all routes that were created for it, and cleans up any event listeners.
- * If the service has a teardown method, it will be called to allow for custom cleanup.
- * 
- * The following cleanup operations are performed:
- * - All HTTP routes (standard and custom) are removed
- * - Service-specific hooks are detached
- * - Global hooks targeting this service are filtered out
- * - All event listeners registered by this service are removed
- * - The service's teardown() method is called if it exists
- * 
- * @param path The path of the service to unregister
- * @returns The removed service instance
- * @throws Error if the service is not found.
- */
-public unservice<Svc extends Service<this> = Service<this>>(path: string): Svc {
+   * Unregister (unuse) a service from the application.
+   * This removes the service from the registry, cleans up any hooks associated with it,
+   * removes all routes that were created for it, and cleans up any event listeners.
+   * If the service has a teardown method, it will be called to allow for custom cleanup.
+   * 
+   * The following cleanup operations are performed:
+   * - All HTTP routes (standard and custom) are removed
+   * - Service-specific hooks are detached
+   * - Global hooks targeting this service are filtered out
+   * - All event listeners registered by this service are removed
+   * - The service's teardown() method is called if it exists
+   * 
+   * @param path The path of the service to unuse
+   * @returns The removed service instance
+   * @throws Error if the service is not found.
+   */
+  public unuse<Svc extends Service<this> = Service<this>>(path: string): Svc {
   // Check if the service exists
   if (!this._services[path]) {
     throw new Error(`Service on path '${path}' not found.`);

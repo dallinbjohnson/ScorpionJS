@@ -46,15 +46,14 @@ describe('ScorpionJS Hook Execution Order', () => {
       }
     }
     const testService = new TestService();
-    app.service('test-service', testService, {
-      hooks: {
+    app.use('test-service', testService);
+    app.service('test-service').hooks({
         before: {
           find: async (context: HookContext<ScorpionApp, TestService>) => {
             executionOrder.push('serviceBefore');
           }
         }
-      }
-    });
+      });
 
     // Register global hook
     app.hooks({
@@ -104,8 +103,8 @@ describe('ScorpionJS Hook Execution Order', () => {
       async remove(id: string | number | null, params: Params) { executionOrder.push('serviceMethodRemove'); return { id, message: 'remove stub' }; }
     }
     const testService = new TestService();
-    app.service('test-service-after', testService, {
-      hooks: {
+    app.use('test-service-after', testService);
+    app.service('test-service-after').hooks({
         before: {
           find: async (context: HookContext<ScorpionApp, TestService>) => {
             executionOrder.push('serviceBefore');
@@ -116,8 +115,7 @@ describe('ScorpionJS Hook Execution Order', () => {
             executionOrder.push('serviceAfter');
           }
         }
-      }
-    });
+      });
 
     app.hooks({
       before: {
@@ -178,8 +176,8 @@ describe('ScorpionJS Hook Execution Order', () => {
       async remove(id: string | number | null, params: Params) { executionOrder.push('serviceMethodRemove'); return { id, message: 'remove stub' }; }
     }
     const testService = new TestService();
-    app.service('test-service-around', testService, {
-      hooks: {
+    app.use('test-service-around', testService);
+    app.service('test-service-around').hooks({
         around: {
           find: async (context: HookContext<ScorpionApp, TestService>, next: NextFunction<ScorpionApp, TestService>) => {
             executionOrder.push('serviceAroundBefore');
@@ -192,8 +190,7 @@ describe('ScorpionJS Hook Execution Order', () => {
             return resultContext;
           }
         }
-      }
-    });
+      });
 
     app.hooks({
       around: {
@@ -251,8 +248,8 @@ describe('ScorpionJS Hook Execution Order', () => {
       async remove(id: string | number | null, params: Params) { executionOrder.push('serviceMethodRemove'); throw testError; }
     }
     const testService = new TestService();
-    app.service('test-service-error', testService, {
-      hooks: {
+    app.use('test-service-error', testService);
+    app.service('test-service-error').hooks({
         before: {
           find: async (context: HookContext<ScorpionApp, TestService>) => {
             executionOrder.push('serviceBefore');
@@ -267,10 +264,12 @@ describe('ScorpionJS Hook Execution Order', () => {
           find: async (context: HookContext<ScorpionApp, TestService>) => {
             executionOrder.push('serviceError');
             expect(context.error).to.equal(testError);
+            // Modify the error or result for the client
+            context.result = { message: 'Error handled gracefully' };
+            // context.error = null; // To indicate the error was handled
           }
         }
-      }
-    });
+      });
 
     app.hooks({
       before: {

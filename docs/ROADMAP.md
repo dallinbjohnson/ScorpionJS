@@ -51,13 +51,14 @@ A developer using ScorpionJS would expect:
     - [x] **6. Initial `HookContext` Design:**
         *   [x] Define the structure of `HookContext` (`app`, `service`, `method`, `type`, `path`, `params`, `data`, `result`, `error`, `config`, etc.).
 
-    - [ ] **7. Schema Definition & Basic Validation Utilities:**
-        *   Establish conventions for defining service data/query schemas (e.g., JSON Schema).
-        *   Implement basic validation hook utilities (e.g., `validateData(schema)`, `validateQuery(schema)`), ensuring they are highly configurable.
-        *   Mechanism for services to register their schemas for tooling/metadata.
-        *   *Support for dynamic schema selection based on context (e.g., request headers, user roles).*
-        *   *Support for dynamic schema selection based on a specific field within the request data (e.g., a `type` field determining the rest of the schema).*
-        *   *Deep integration with service registration for automatic schema exposure and validation during transport mapping.*
+    - [x] **7. Schema Definition & Basic Validation Utilities:**
+        *   [x] Establish conventions for defining service data/query schemas (e.g., JSON Schema).
+        *   [x] Implement basic validation hook utilities (e.g., `validateData(schema)`, `validateQuery(schema)`), ensuring they are highly configurable.
+        *   [x] Mechanism for services to register their schemas for tooling/metadata.
+        *   [x] *Support for dynamic schema selection based on context (e.g., request headers, user roles).*
+        *   [x] *Support for dynamic schema selection based on a specific field within the request data (e.g., a `type` field determining the rest of the schema).*
+        *   [x] *Deep integration with service registration for automatic schema exposure and validation during transport mapping.*
+        *   [x] Support for per-service validators to allow different validation libraries (Ajv, Zod, TypeBox) for different services.
 
 - [ ] **Phase 2: Transports, Logging & Advanced Hooks**
 
@@ -65,7 +66,7 @@ A developer using ScorpionJS would expect:
         *   Integrate the HTTP runtime adapter.
         *   [x] Map standard and custom service methods to RESTful routes.
         *   Implement request processing (body parsing, query params) and response handling.
-        *   Integrate schema validation hooks for request data/query.
+        *   [x] Integrate schema validation hooks for request data/query.
         *   Add REST transport configuration (port, host, CORS, body parser options, compression).
         *   *Ensure transport can dynamically add/remove routes when services are registered/unregistered.*
         *   *Advanced routing capabilities: support for nested routes, path parameter constraints, route specificity, and conflict resolution strategies.*

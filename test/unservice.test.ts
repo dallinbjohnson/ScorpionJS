@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { createApp, ScorpionApp } from '../src/app.js';
-import { Service, Params } from '../src/types.js';
+import { Service, Params, HookContext } from '../src/types.js';
 
 describe('app.unservice', () => {
   it('should remove a service from the app', () => {
@@ -17,13 +17,13 @@ describe('app.unservice', () => {
     };
     
     // Register the service
-    app.service('test', testService);
+    app.use('test', testService);
     
     // Verify service is registered
     expect(app.services).to.have.property('test');
     
     // Unregister the service
-    const removedService = app.unservice('test');
+    const removedService = app.unuse('test');
     
     // Verify service is no longer registered
     expect(app.services).to.not.have.property('test');
@@ -36,7 +36,7 @@ describe('app.unservice', () => {
     const app = createApp();
     
     // Attempt to unregister a service that doesn't exist
-    expect(() => app.unservice('non-existent')).to.throw(Error, "Service on path 'non-existent' not found.");
+    expect(() => app.unuse('non-existent')).to.throw(Error, "Service on path 'non-existent' not found.");
   });
   
   it('should clean up service-specific hooks', () => {
@@ -53,16 +53,15 @@ describe('app.unservice', () => {
     };
     
     // Register the service with hooks
-    app.service('test', testService, {
-      hooks: {
+    app.use('test', testService);
+    app.service('test').hooks({
         before: {
-          all: [(context) => { 
+          all: [(context: HookContext<ScorpionApp>) => { 
             context.data = { modified: true };
             return context;
           }]
         }
-      }
-    });
+      });
     
     // Verify hooks are registered (indirectly by checking if they run)
     const getContext = app.executeServiceCall({
@@ -73,7 +72,7 @@ describe('app.unservice', () => {
     });
     
     // Unregister the service
-    app.unservice('test');
+    app.unuse('test');
     
     // Register a new service with the same path
     const newService: Service<ScorpionApp> = {
@@ -85,7 +84,7 @@ describe('app.unservice', () => {
       remove(id: string | number, params?: Params) { return Promise.resolve({ id }); }
     };
     
-    app.service('test', newService);
+    app.use('test', newService);
     
     // Verify the hooks from the old service are not applied
     app.executeServiceCall({
@@ -113,10 +112,10 @@ describe('app.unservice', () => {
     };
     
     // Register the service
-    app.service('test', testService);
+    app.use('test', testService);
     
     // Unregister the service
-    app.unservice('test');
+    app.unuse('test');
     
     // Register a different service on the same path
     const newService: Service<ScorpionApp> = {
@@ -129,7 +128,7 @@ describe('app.unservice', () => {
       customMethod() { return 'custom result'; }
     };
     
-    app.service('test', newService);
+    app.use('test', newService);
     
     // The new service should work correctly
     const result = await app.executeServiceCall({
@@ -179,10 +178,10 @@ describe('app.unservice', () => {
     };
     
     // Register the service
-    app.service('test', testService);
+    app.use('test', testService);
     
     // Unregister the service
-    app.unservice('test');
+    app.unuse('test');
     
     // Verify teardown was called
     expect(teardownCalled).to.be.true;
@@ -211,10 +210,10 @@ describe('app.unservice', () => {
       remove(id: string | number, params?: Params) { return Promise.resolve({ id }); }
     };
     
-    app.service('test', testService);
+    app.use('test', testService);
     
     // Unregister the service
-    app.unservice('test');
+    app.unuse('test');
     
     // Register a new service with the same path
     const newService: Service<ScorpionApp> = {
@@ -226,7 +225,7 @@ describe('app.unservice', () => {
       remove(id: string | number, params?: Params) { return Promise.resolve({ id }); }
     };
     
-    app.service('test', newService);
+    app.use('test', newService);
     
     // Execute a call to verify hooks are not applied
     app.executeServiceCall({
