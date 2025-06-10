@@ -44,6 +44,8 @@ const messageService = {
 app.service('messages', messageService);
 ```
 
+Services can be registered at any point during the application's lifecycle, not just at startup. This allows for dynamic application composition, for example, when loading plugins that provide their own services.
+
 **2. Service Class**
 
 Using a class can be beneficial for organizing more complex services, managing internal state, or leveraging inheritance.
@@ -99,6 +101,40 @@ class MessageService {
 app.service('messages', new MessageService({ /* options */ }));
 ```
 Both approaches are equally valid. The choice depends on your preference and the complexity of the service.
+
+### Unregistering Services (`app.unservice`)
+
+ScorpionJS allows for the dynamic unregistration of services using the `app.unservice(path)` method. This is crucial for scenarios like plugin unloading, hot-swapping service implementations, or reconfiguring an application at runtime without a full restart.
+
+When a service is unregistered, ScorpionJS performs the following actions:
+
+*   **Removal from Registry:** The service instance is removed from the application's internal service registry, making it no longer accessible via `app.service(path)`.
+*   **Route Teardown:** All routes (e.g., REST endpoints, WebSocket event handlers) that were automatically created for this service by the framework's routers are removed.
+*   **Hook Detachment:** Any service-specific hooks that were registered for this particular service instance are detached. Global hooks and hooks for other services remain unaffected.
+*   **Event Listener Cleanup:** Service-specific event listeners (e.g., for standard service events like `created`, `updated`) are cleaned up to prevent memory leaks or unintended behavior.
+*   **Service Teardown (Optional Convention):** If the service instance being unregistered has a method named `teardown` (e.g., `async teardown(app)`), ScorpionJS will attempt to call it. This provides a hook for the service to perform any custom cleanup logic it requires, such as closing database connections, releasing file handles, clearing intervals or timeouts, or unsubscribing from external message queues. The `app` instance is passed to `teardown` in case the service needs it for its cleanup operations.
+
+**Example:**
+
+```javascript
+// Assume a service 'myDynamicService' is registered earlier
+// app.service('myDynamicService', new MyDynamicService());
+
+// Later, to unregister it:
+const unregisteredService = app.unservice('myDynamicService');
+
+if (unregisteredService) {
+  console.log(`Service 'myDynamicService' has been unregistered.`);
+  // unregisteredService is the instance that was removed
+  // If it had a teardown method, it would have been called before this.
+} else {
+  console.log(`Service 'myDynamicService' not found or already unregistered.`);
+}
+```
+
+The `app.unservice(path)` method returns the service instance that was removed if successful, or `undefined` if no service was found registered at the given path.
+
+This dynamic registration and unregistration capability is fundamental to ScorpionJS's design for building flexible and adaptable applications.
 
 ## Service Method Categories
 
