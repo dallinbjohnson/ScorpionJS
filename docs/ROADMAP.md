@@ -16,39 +16,39 @@ A developer using ScorpionJS would expect:
 
 ## Development Plan
 
-- [ ] **Phase 1: Core Framework & Service Layer**
+- [x] **Phase 1: Core Framework & Service Layer**
 
-    - [ ] **1. Project Setup & Core Definitions:**
-        *   Set up the project with TypeScript (recommended for a framework for type safety) or JavaScript, including a build process, linter, and testing framework.
-        *   Define core interfaces and types: `ScorpionApp`, `Service`, `HookContext`, `HookFunction`, `AroundHookFunction`, `NextFunction`, `PluginFunction`.
-        *   Implement the basic `createApp(options)` function.
-        *   Implement basic plugin system (`app.configure(pluginFunction)`).
+    - [x] **1. Project Setup & Core Definitions:**
+        *   [x] Set up the project with TypeScript (recommended for a framework for type safety) or JavaScript, including a build process, linter, and testing framework.
+        *   [x] Define core interfaces and types: `ScorpionApp`, `Service`, `HookContext`, `HookFunction`, `AroundHookFunction`, `NextFunction`, `PluginFunction`.
+        *   [x] Implement the basic `createApp(options)` function.
+        *   [x] Implement basic plugin system (`app.configure(pluginFunction)`).
 
     - [ ] **2. Basic Configuration System:**
         *   Implement loading of configuration (e.g., from `createApp` options, environment variables, files).
         *   Support for default and environment-specific configurations.
         *   Mechanism for services/plugins to access configuration.
 
-    - [ ] **3. Dynamic Service Registration, Unregistration, and Invocation:**
-        *   Implement `app.service('serviceName', serviceInstance, serviceOptions)` for adding services.
+    - [x] **3. Dynamic Service Registration, Unregistration, and Invocation:**
+        *   [x] Implement `app.service('serviceName', serviceInstance, serviceOptions)` for adding services.
         *   Implement `app.unservice('serviceName')` to remove a service and its associated resources (routes, hooks, event listeners).
-        *   Develop a dynamic internal mechanism to dispatch calls to service methods, capable of handling runtime service changes.
-        *   Allow per-service configuration via `serviceOptions`.
+        *   [x] Develop a dynamic internal mechanism to dispatch calls to service methods, capable of handling runtime service changes.
+        *   [x] Allow per-service configuration via `serviceOptions`.
 
-    - [ ] **4. Runtime Abstraction Layer (Initial - HTTP):**
-        *   Design a lightweight adapter interface for HTTP requests/responses.
-        *   Implement an initial adapter for Node.js.
-        *   Implement `app.listen(port)`.
+    - [x] **4. Runtime Abstraction Layer (Initial - HTTP):**
+        *   [x] Design a lightweight adapter interface for HTTP requests/responses.
+        *   [x] Implement an initial adapter for Node.js.
+        *   [x] Implement `app.listen(port)`.
 
-    - [ ] **5. Core Hooks Engine:**
-        *   Implement the `runHooks` internal function.
-        *   Support `before`, `after`, and `error` hooks with correct LIFO/FIFO ordering.
-        *   Implement `around` hooks with the `(context, next)` signature.
-        *   Provide `app.hooks({...})` (global) and `service.hooks({...})` (service-specific).
-        *   *Design consideration: Ensure the engine is extensible for future Interceptor hooks and pattern-based hooks, and that internal hook management supports dynamic association/disassociation of hooks with services.*
+    - [x] **5. Core Hooks Engine:**
+        *   [x] Implement the `runHooks` internal function.
+        *   [x] Support `before`, `after`, and `error` hooks with correct LIFO/FIFO ordering.
+        *   [x] Implement `around` hooks with the `(context, next)` signature.
+        *   [x] Provide `app.hooks({...})` (global) and `service.hooks({...})` (service-specific).
+        *   [x] *Design consideration: Ensure the engine is extensible for future Interceptor hooks and pattern-based hooks, and that internal hook management supports dynamic association/disassociation of hooks with services.*
 
-    - [ ] **6. Initial `HookContext` Design:**
-        *   Define the structure of `HookContext` (`app`, `service`, `method`, `type`, `path`, `params`, `data`, `result`, `error`, `config`, etc.).
+    - [x] **6. Initial `HookContext` Design:**
+        *   [x] Define the structure of `HookContext` (`app`, `service`, `method`, `type`, `path`, `params`, `data`, `result`, `error`, `config`, etc.).
 
     - [ ] **7. Schema Definition & Basic Validation Utilities:**
         *   Establish conventions for defining service data/query schemas (e.g., JSON Schema).
@@ -62,7 +62,7 @@ A developer using ScorpionJS would expect:
 
     - [ ] **8. REST Transport Implementation:**
         *   Integrate the HTTP runtime adapter.
-        *   Map standard and custom service methods to RESTful routes.
+        *   [x] Map standard and custom service methods to RESTful routes.
         *   Implement request processing (body parsing, query params) and response handling.
         *   Integrate schema validation hooks for request data/query.
         *   Add REST transport configuration (port, host, CORS, body parser options, compression).
@@ -86,9 +86,9 @@ A developer using ScorpionJS would expect:
         *   Implement log redaction and custom serializers.
         *   Integrate logger into `HookContext` and core framework.
 
-    - [ ] **11. Advanced Hook Features:**
-        *   Implement pattern-based hooks (e.g., `app.hooks('/api/secure/*', {...})`).
-        *   Implement Interceptor Hooks (`app.interceptorHooks({...})`) and integrate into the `runHooks` execution flow as per documentation (global, service, interceptor layers).
+    - [x] **11. Advanced Hook Features:**
+        *   [x] Implement pattern-based hooks (e.g., `app.hooks('/api/secure/*', {...})`).
+        *   [x] Implement Interceptor Hooks (`app.interceptorHooks({...})`) and integrate into the `runHooks` execution flow as per documentation (global, service, interceptor layers).
 
     - [ ] **12. Streaming Support:**
         *   Enhance `HookContext` for streaming (`context.stream`, `context.isStream`).
@@ -143,8 +143,8 @@ A developer using ScorpionJS would expect:
 
 - [ ] **Phase 4: Polish, Ecosystem & Multi-Runtime Expansion**
 
-    - [ ] **20. Fault Tolerance Primitives & Advanced Error Handling:**
-        *   Implement robust error handling with a hierarchy of custom error classes (`ScorpionError`, `NotAuthenticated`, `Forbidden`, `NotFound`, `BadRequest`, `ServiceUnavailable`, etc.).
+    - [x] **20. Fault Tolerance Primitives & Advanced Error Handling:**
+            *   [x] Implement robust error handling with a hierarchy of custom error classes (`ScorpionError`, `NotAuthenticated`, `Forbidden`, `NotFound`, `BadRequest`, `ServiceUnavailable`, etc.).
         *   Implement and integrate core fault tolerance patterns:
             *   Retries (with configurable strategies like exponential backoff).
             *   Timeouts (for service calls and operations).
