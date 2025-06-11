@@ -190,9 +190,9 @@ Register the services with the application. The path for the `PostsService` incl
 // app.js or similar setup file
 const app = new Scorpion(); // Assuming Scorpion is your app instance
 
-app.service('users', new UsersService());
+app.use('users', new UsersService());
 // Register PostsService nested under users, using the :userId parameter from the parent path
-app.service('users/:userId/posts', new PostsService());
+app.use('users/:userId/posts', new PostsService());
 
 // The router will now handle routes like:
 // /users/:userId
