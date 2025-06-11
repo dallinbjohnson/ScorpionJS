@@ -179,6 +179,31 @@ export function validateData<A extends IScorpionApp<any> = IScorpionApp<any>, S 
     : { definition: schema, options };
   
   return async function validateDataHook(context: HookContext<A, S>): Promise<HookContext<A, S>> {
+    // --- Start diagnostic logs for validator selection ---
+    const servicePathForLog = context?.path || 'unknown-service';
+    const serviceOptionsForLog = context.service?._options; // Changed to _options
+    const serviceValidatorObjForLog = serviceOptionsForLog?.validator;
+    const appInstanceForLog = context.app;
+    const appLevelValidatorObjForLog = appInstanceForLog?.get('validator');
+
+    console.log(`[DEBUG validateData for ${servicePathForLog}] Validator selection debug info (at start of hook):`);
+    console.log(`  - context.service exists: ${!!context.service}`);
+    console.log(`  - context.service._options exists: ${!!serviceOptionsForLog}`); // Changed to _options
+    console.log(`  - context.service._options.validator exists: ${!!serviceValidatorObjForLog}`); // Changed to _options
+    if (serviceValidatorObjForLog) {
+      console.log(`  - typeof context.service._options.validator.validate: ${typeof (serviceValidatorObjForLog as any).validate}`); // Changed to _options
+    }
+    console.log(`  - context.app exists: ${!!appInstanceForLog}`);
+    console.log(`  - app.get('validator') exists: ${!!appLevelValidatorObjForLog}`);
+    if (appLevelValidatorObjForLog) {
+      console.log(`  - typeof app.get('validator').validate: ${typeof (appLevelValidatorObjForLog as any).validate}`);
+    }
+    console.log(`  - schemaObj.validate exists: ${!!schemaObj.validate}`);
+    if (schemaObj.validate) {
+      console.log(`  - typeof schemaObj.validate: ${typeof schemaObj.validate}`);
+    }
+    // --- End diagnostic logs ---
+
     if (!context.data) {
       return context;
     }
@@ -198,9 +223,9 @@ export function validateData<A extends IScorpionApp<any> = IScorpionApp<any>, S 
     let validator;
     
     // First check if the service has a validator
-    if (context.service?.options?.validator?.validate) {
+    if (context.service?._options?.validator?.validate) { // Changed to _options
       validator = (data: any, options?: SchemaOptions) => {
-        return context.service!.options!.validator!.validate(finalSchema, data, options || schemaObj.options);
+        return context.service!._options!.validator!.validate(finalSchema, data, options || schemaObj.options); // Changed to _options
       };
     } 
     // Then check if the app has a validator
@@ -218,7 +243,7 @@ export function validateData<A extends IScorpionApp<any> = IScorpionApp<any>, S 
     
     const finalOptions = schemaObj.options;
     const validationResult = validator(context.data, finalOptions);
-    console.log('[validateData] Validation Result:', validationResult);
+    // console.log('[validateData] Validation Result:', validationResult); // Original log, can be noisy, let's keep it commented for now unless needed
 
     if (!validationResult.valid) {
       throw new BadRequest('Validation error', {
@@ -271,9 +296,9 @@ export function validateQuery<A extends IScorpionApp<any> = IScorpionApp<any>, S
     let validator;
     
     // First check if the service has a validator
-    if (context.service?.options?.validator?.validate) {
+    if (context.service?._options?.validator?.validate) { // Changed to _options
       validator = (data: any, options?: SchemaOptions) => {
-        return context.service!.options!.validator!.validate(finalSchema, data, options || schemaObj.options);
+        return context.service!._options!.validator!.validate(finalSchema, data, options || schemaObj.options); // Changed to _options
       };
     } 
     // Then check if the app has a validator

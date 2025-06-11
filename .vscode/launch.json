@@ -1,0 +1,28 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Mocha Tests",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--loader",
+        "ts-node/esm",
+        "${workspaceFolder}/node_modules/mocha/bin/_mocha"
+      ],
+      "args": [
+        "test/**/*.test.ts",
+        "--timeout",
+        "999999",
+        "--colors"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    }
+  ]
+}

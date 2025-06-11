@@ -1,11 +1,28 @@
 import { ScorpionError } from './errors.js';
 /**
+ * Configuration options for creating a ScorpionJS application
+ */
+export interface ScorpionConfig {
+    env?: string;
+    server?: {
+        port?: number;
+        host?: string;
+        cors?: boolean | Record<string, any>;
+        bodyParser?: boolean | Record<string, any>;
+    };
+    auth?: Record<string, any>;
+    database?: Record<string, any>;
+    [key: string]: any;
+}
+/**
  * Base interface for a Scorpion application instance.
  * Used to break circular dependencies for type information.
  */
 export interface IScorpionApp<AppServices extends Record<string, Service<any>> = Record<string, any>> {
     services: AppServices;
     _isScorpionAppBrand: never;
+    get<T = any>(path: string): T;
+    set<T = any>(path: string, value: T): this;
 }
 /**
  * Represents the parameters for a service method call.
@@ -32,11 +49,34 @@ export interface ServiceMethods<A extends IScorpionApp<any> = IScorpionApp<any>,
 /**
  * A generic service interface that includes standard methods
  * and allows for any number of custom methods.
+ * All standard methods are optional to allow for more focused services.
  */
-export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> extends ServiceMethods<A, T, D> {
+export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> {
     app?: A;
     setup?(app: A, path: string): void;
+    teardown?(): void;
+    emit?(event: string, data: any, context?: any): this;
+    on?(event: string, listener: (...args: any[]) => void): this;
+    off?(event: string, listener: (...args: any[]) => void): this;
+    hooks?(config: HooksApiConfig<any, any>): this;
+    find?(params?: Params): Promise<T[] | any>;
+    get?(id: string | number, params?: Params): Promise<T | any>;
+    create?(data: D, params?: Params): Promise<T | any>;
+    update?(id: string | number, data: D, params?: Params): Promise<T | any>;
+    patch?(id: string | number, data: Partial<D>, params?: Params): Promise<T | any>;
+    remove?(id: string | number, params?: Params): Promise<T | any>;
     [key: string]: any;
+}
+/**
+ * Represents a service that has been registered with the app via app.use().
+ * This extends the base Service interface but guarantees that certain methods
+ * like hooks() are always available, as they are added during registration.
+ */
+export interface RegisteredService<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> extends Service<A, T, D> {
+    hooks(config: HooksApiConfig<any, any>): this;
+    emit(event: string, data: any, context?: any): this;
+    on(event: string, listener: (...args: any[]) => void): this;
+    off(event: string, listener: (...args: any[]) => void): this;
 }
 /**
  * Options that can be passed when registering a service.
@@ -73,15 +113,16 @@ export interface AroundHookMethodConfig<A extends IScorpionApp<any> = IScorpionA
     [customMethod: string]: AroundHookMethodConfigEntry<A, S> | undefined;
 }
 export interface HooksApiConfig<A extends IScorpionApp<any> = IScorpionApp<any>, S extends Service<A> | undefined = undefined> {
+    around?: AroundHookMethodConfig<A, S>;
     before?: StandardHookMethodConfig<A, S>;
     after?: StandardHookMethodConfig<A, S>;
     error?: StandardHookMethodConfig<A, S>;
-    around?: AroundHookMethodConfig<A, S>;
 }
 export interface HookContext<A extends IScorpionApp<any> = IScorpionApp<any>, S extends Service<A> | undefined = undefined> {
     app: A;
     service?: S;
-    servicePath?: string;
+    _rawService?: S;
+    path: string;
     method?: string;
     type: HookType;
     params: Params;
@@ -101,12 +142,18 @@ export interface ServiceOptions<A extends IScorpionApp<any> = IScorpionApp<any>,
     methods?: {
         [methodName: string]: MethodRoutingOptions;
     };
-    hooks?: HooksApiConfig<A, Svc>;
+    validator?: {
+        validate: (schema: any, data: any, options?: any) => {
+            valid: boolean;
+            errors?: any;
+            data?: any;
+        };
+    };
 }
 /**
  * Data associated with a route in the router.
  */
 export interface ScorpionRouteData {
-    servicePath: string;
+    path: string;
     methodName: string;
 }

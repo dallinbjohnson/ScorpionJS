@@ -74,7 +74,7 @@ describe('ScorpionJS Hook Execution Order', () => {
     });
 
     await app.executeServiceCall<TestService>({
-      servicePath: 'test-service',
+      path: 'test-service',
       method: 'find',
       params: { query: {} }, // Provide a basic params object
     });
@@ -144,7 +144,7 @@ describe('ScorpionJS Hook Execution Order', () => {
     });
 
     await app.executeServiceCall<TestService>({
-      servicePath: 'test-service-after',
+      path: 'test-service-after',
       method: 'find',
       params: { query: {} },
     });
@@ -215,7 +215,7 @@ describe('ScorpionJS Hook Execution Order', () => {
     });
 
     await app.executeServiceCall<TestService>({
-      servicePath: 'test-service-around',
+      path: 'test-service-around',
       method: 'find',
       params: { query: {} },
     });
@@ -311,7 +311,7 @@ describe('ScorpionJS Hook Execution Order', () => {
 
     // executeServiceCall should not throw but populate context.error
     const finalContext = await app.executeServiceCall<TestService>({
-      servicePath: 'test-service-error',
+      path: 'test-service-error',
       method: 'find',
       params: { query: {} },
     });

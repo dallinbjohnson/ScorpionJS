@@ -22,14 +22,14 @@ function matchesPattern(text, pattern) {
 /**
  * Helper function to filter hooks by type and pattern
  */
-function filterHooksByType(hooks, servicePath, method, checkServicePath = true) {
+function filterHooksByType(hooks, path, method, checkServicePath = true) {
     const beforeHooks = [];
     const afterHooks = [];
     const errorHooks = [];
     const aroundHooks = [];
     hooks.forEach(hook => {
-        // For service hooks, we don't need to check servicePath (it's implicit)
-        const pathMatches = !checkServicePath || matchesPattern(servicePath || '', hook.servicePathPattern);
+        // For service hooks, we don't need to check path (it's implicit)
+        const pathMatches = !checkServicePath || matchesPattern(path || '', hook.servicePathPattern);
         const methodMatches = matchesPattern(method || '', hook.methodPattern);
         if (pathMatches && methodMatches) {
             if (hook.type === 'before')
@@ -47,7 +47,7 @@ function filterHooksByType(hooks, servicePath, method, checkServicePath = true) 
 /**
  * Helper function to execute standard hooks (before, after, error)
  */
-async function executeStandardHooks(hooks, context, hookType, servicePath, method, suppressErrorLogging = false) {
+async function executeStandardHooks(hooks, context, hookType, path, method, suppressErrorLogging = false) {
     // Create a new context with the correct hook type
     let currentContext = { ...context };
     currentContext.type = hookType;
@@ -60,7 +60,7 @@ async function executeStandardHooks(hooks, context, hookType, servicePath, metho
             break;
         const hookFn = hook.fn;
         if (isAroundHookFunction(hookFn)) {
-            console.warn(`[ScorpionJS] Misplaced AroundHookFunction in '${hookType}' hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
+            console.warn(`[ScorpionJS] Misplaced AroundHookFunction in '${hookType}' hooks. Skipping. Service: ${path}, Method: ${method}`);
             continue;
         }
         try {
@@ -84,34 +84,62 @@ async function executeStandardHooks(hooks, context, hookType, servicePath, metho
 }
 export async function runHooks(initialContext, globalHooks, interceptorGlobalHooks, applicableServiceHooks) {
     let currentContext = initialContext;
-    const { servicePath, method } = initialContext;
+    const { path, method } = initialContext;
     // 1. Filter hooks by type and pattern
-    const { beforeHooks: applicableGlobalBeforeHooks, afterHooks: applicableGlobalAfterHooks, errorHooks: applicableGlobalErrorHooks, aroundHooks: applicableGlobalAroundHooks } = filterHooksByType(globalHooks, servicePath, method);
-    const { beforeHooks: applicableServiceBeforeHooks, afterHooks: applicableServiceAfterHooks, errorHooks: applicableServiceErrorHooks, aroundHooks: applicableServiceAroundHooks } = filterHooksByType(applicableServiceHooks, servicePath, method, false);
-    const { beforeHooks: applicableInterceptorBeforeHooks, afterHooks: applicableInterceptorAfterHooks, errorHooks: applicableInterceptorErrorHooks, aroundHooks: applicableInterceptorAroundHooks } = filterHooksByType(interceptorGlobalHooks, servicePath, method);
+    const { beforeHooks: applicableGlobalBeforeHooks, afterHooks: applicableGlobalAfterHooks, errorHooks: applicableGlobalErrorHooks, aroundHooks: applicableGlobalAroundHooks } = filterHooksByType(globalHooks, path, method);
+    const { beforeHooks: applicableServiceBeforeHooks, afterHooks: applicableServiceAfterHooks, errorHooks: applicableServiceErrorHooks, aroundHooks: applicableServiceAroundHooks } = filterHooksByType(applicableServiceHooks, path, method, false);
+    const { beforeHooks: applicableInterceptorBeforeHooks, afterHooks: applicableInterceptorAfterHooks, errorHooks: applicableInterceptorErrorHooks, aroundHooks: applicableInterceptorAroundHooks } = filterHooksByType(interceptorGlobalHooks, path, method);
     // Function to execute the main service method
     const callServiceMethod = async (contextForServiceCall) => {
         let operationContext = { ...contextForServiceCall }; // Work on a copy
-        if (!operationContext.error && operationContext.servicePath && operationContext.method) {
-            const service = operationContext.service; // Svc can be undefined here
-            const serviceMethod = service?.[operationContext.method];
+        if (!operationContext.error && operationContext.path && operationContext.method) {
+            const service = operationContext.service;
+            const rawService = operationContext._rawService || service;
+            const serviceMethod = rawService?.[operationContext.method];
             if (service && operationContext.method && typeof serviceMethod === 'function') {
                 try {
+                    const methodName = operationContext.method;
                     const args = [];
-                    const httpMethod = operationContext.params.req?.method?.toUpperCase();
-                    if (operationContext.id !== undefined && operationContext.id !== null)
-                        args.push(operationContext.id);
-                    if ((httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') && operationContext.data !== undefined)
-                        args.push(operationContext.data);
-                    args.push(operationContext.params);
-                    operationContext.result = await serviceMethod.apply(service, args);
+                    // Reconstruct arguments based on standard service method signatures
+                    switch (methodName) {
+                        case 'find':
+                            args.push(operationContext.params);
+                            break;
+                        case 'get':
+                        case 'remove':
+                            args.push(operationContext.id);
+                            args.push(operationContext.params);
+                            break;
+                        case 'create':
+                            args.push(operationContext.data);
+                            args.push(operationContext.params);
+                            break;
+                        case 'update':
+                        case 'patch':
+                            args.push(operationContext.id);
+                            args.push(operationContext.data);
+                            args.push(operationContext.params);
+                            break;
+                        default:
+                            // Basic support for custom methods. Assumes a signature of (id, data, params)
+                            // but only includes what's available in the context.
+                            if (operationContext.id !== undefined && operationContext.id !== null) {
+                                args.push(operationContext.id);
+                            }
+                            if (operationContext.data !== undefined) {
+                                args.push(operationContext.data);
+                            }
+                            args.push(operationContext.params);
+                            break;
+                    }
+                    operationContext.result = await serviceMethod.apply(rawService, args);
                 }
                 catch (err) {
                     operationContext.error = err;
                 }
             }
             else {
-                operationContext.error = new NotFound(`Service method ${operationContext.servicePath}.${operationContext.method} not found or not a function.`);
+                operationContext.error = new NotFound(`Service method ${operationContext.path}.${operationContext.method} not found or not a function.`);
             }
         }
         return operationContext;
@@ -170,15 +198,15 @@ export async function runHooks(initialContext, globalHooks, interceptorGlobalHoo
     // --- Main Execution Flow ---
     // Stage 1: Execute Regular Global 'before' hooks
     if (!currentContext.error) {
-        currentContext = await executeStandardHooks(applicableGlobalBeforeHooks, currentContext, 'before', servicePath, method);
+        currentContext = await executeStandardHooks(applicableGlobalBeforeHooks, currentContext, 'before', path, method);
     }
     // Stage 2: Execute Service-specific 'before' hooks
     if (!currentContext.error) {
-        currentContext = await executeStandardHooks(applicableServiceBeforeHooks, currentContext, 'before', servicePath, method);
+        currentContext = await executeStandardHooks(applicableServiceBeforeHooks, currentContext, 'before', path, method);
     }
     // Stage 3: Execute Interceptor Global 'before' hooks
     if (!currentContext.error) {
-        currentContext = await executeStandardHooks(applicableInterceptorBeforeHooks, currentContext, 'before', servicePath, method);
+        currentContext = await executeStandardHooks(applicableInterceptorBeforeHooks, currentContext, 'before', path, method);
     }
     // Stage 4: Execute 'around' chain (Regular Global -> Service-specific -> Interceptor Global -> Service Method)
     if (!currentContext.error) {
@@ -189,27 +217,27 @@ export async function runHooks(initialContext, globalHooks, interceptorGlobalHoo
     // If an 'after' hook itself throws, it will set currentContext.error, which is then handled by Stage 6.
     if (!currentContext.error) {
         // Execute Interceptor Global 'after' hooks
-        currentContext = await executeStandardHooks(applicableInterceptorAfterHooks, currentContext, 'after', servicePath, method);
+        currentContext = await executeStandardHooks(applicableInterceptorAfterHooks, currentContext, 'after', path, method);
         // Execute Service-specific 'after' hooks
         if (!currentContext.error) {
-            currentContext = await executeStandardHooks(applicableServiceAfterHooks, currentContext, 'after', servicePath, method);
+            currentContext = await executeStandardHooks(applicableServiceAfterHooks, currentContext, 'after', path, method);
         }
         // Execute Regular Global 'after' hooks
         if (!currentContext.error) {
-            currentContext = await executeStandardHooks(applicableGlobalAfterHooks, currentContext, 'after', servicePath, method);
+            currentContext = await executeStandardHooks(applicableGlobalAfterHooks, currentContext, 'after', path, method);
         }
     }
     // Stage 6: 'error' hooks (LIFO: Interceptor -> Service -> Global)
     // This block runs if an error occurred at any point: before, around, service method, or in 'after' hooks.
     if (currentContext.error) {
         // Execute Interceptor error hooks
-        currentContext = await executeStandardHooks(applicableInterceptorErrorHooks, currentContext, 'error', servicePath, method, true // Suppress error logging for error hooks
+        currentContext = await executeStandardHooks(applicableInterceptorErrorHooks, currentContext, 'error', path, method, true // Suppress error logging for error hooks
         );
         // Execute Service-specific error hooks
-        currentContext = await executeStandardHooks(applicableServiceErrorHooks, currentContext, 'error', servicePath, method, true // Suppress error logging for error hooks
+        currentContext = await executeStandardHooks(applicableServiceErrorHooks, currentContext, 'error', path, method, true // Suppress error logging for error hooks
         );
         // Execute Regular Global error hooks
-        currentContext = await executeStandardHooks(applicableGlobalErrorHooks, currentContext, 'error', servicePath, method, true // Suppress error logging for error hooks
+        currentContext = await executeStandardHooks(applicableGlobalErrorHooks, currentContext, 'error', path, method, true // Suppress error logging for error hooks
         );
     }
     return currentContext;

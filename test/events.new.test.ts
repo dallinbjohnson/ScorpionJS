@@ -66,7 +66,7 @@ describe('Event System', () => {
       
       // Call the create method
       const result = await app.executeServiceCall({
-        servicePath: 'messages',
+        path: 'messages',
         method: 'create',
         data: { text: 'Hello, world!' }
       });
@@ -105,7 +105,7 @@ describe('Event System', () => {
       
       // Call the update method
       const result = await app.executeServiceCall({
-        servicePath: 'messages',
+        path: 'messages',
         method: 'update',
         id: 1,
         data: { text: 'Updated message' }
@@ -144,7 +144,7 @@ describe('Event System', () => {
       
       // Call the patch method
       const result = await app.executeServiceCall({
-        servicePath: 'messages',
+        path: 'messages',
         method: 'patch',
         id: 1,
         data: { text: 'Patched message' }
@@ -183,7 +183,7 @@ describe('Event System', () => {
       
       // Call the remove method
       const result = await app.executeServiceCall({
-        servicePath: 'messages',
+        path: 'messages',
         method: 'remove',
         id: 1
       });
@@ -231,7 +231,7 @@ describe('Event System', () => {
       
       // Call the custom method
       const result = await app.executeServiceCall({
-        servicePath: 'payments',
+        path: 'payments',
         method: 'processPayment',
         data: { amount: 100 }
       });
@@ -290,7 +290,7 @@ describe('Event System', () => {
       
       // Call the custom method
       await app.executeServiceCall({
-        servicePath: 'test-events',
+        path: 'test-events',
         method: 'customMethod',
         data: { test: true }
       });
@@ -320,7 +320,7 @@ describe('Event System', () => {
       
       // Call the create method
       await app.executeServiceCall({
-        servicePath: 'messages',
+        path: 'messages',
         method: 'create',
         data: { text: 'Hello, world!' }
       });
@@ -329,7 +329,7 @@ describe('Event System', () => {
       const eventData = await eventPromise;
       
       // Verify the event data
-      expect((eventData as any).data).to.deep.equal({ id: 1 });
+      expect((eventData as any).data).to.deep.equal({ id: 1, text: 'Hello, world!' });
       expect((eventData as any).context.path).to.equal('messages');
     });
   });

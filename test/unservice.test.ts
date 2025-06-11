@@ -65,7 +65,7 @@ describe('app.unservice', () => {
     
     // Verify hooks are registered (indirectly by checking if they run)
     const getContext = app.executeServiceCall({
-      servicePath: 'test',
+      path: 'test',
       method: 'get',
       params: {},
       id: '1'
@@ -88,7 +88,7 @@ describe('app.unservice', () => {
     
     // Verify the hooks from the old service are not applied
     app.executeServiceCall({
-      servicePath: 'test',
+      path: 'test',
       method: 'get',
       params: {},
       id: '1'
@@ -132,7 +132,7 @@ describe('app.unservice', () => {
     
     // The new service should work correctly
     const result = await app.executeServiceCall({
-      servicePath: 'test',
+      path: 'test',
       method: 'find',
       params: {}
     });
@@ -141,7 +141,7 @@ describe('app.unservice', () => {
     
     // Verify the new service has the custom method
     const customResult = await app.executeServiceCall({
-      servicePath: 'test',
+      path: 'test',
       method: 'customMethod',
       params: {}
     });
@@ -150,7 +150,7 @@ describe('app.unservice', () => {
     
     // Verify that the new service's methods work correctly
     const getResult = await app.executeServiceCall({
-      servicePath: 'test',
+      path: 'test',
       method: 'get',
       params: {},
       id: '1'
@@ -229,7 +229,7 @@ describe('app.unservice', () => {
     
     // Execute a call to verify hooks are not applied
     app.executeServiceCall({
-      servicePath: 'test',
+      path: 'test',
       method: 'find',
       params: {}
     }).then(context => {

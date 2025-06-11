@@ -171,9 +171,10 @@ export interface HooksApiConfig<
 // --- End Hook Configuration Types ---
 
 export interface HookContext<A extends IScorpionApp<any> = IScorpionApp<any>, S extends Service<A> | undefined = undefined> {
-  app: A; 
-  service?: S; 
-  servicePath?: string; 
+  app: A;
+  service?: RegisteredService<A, any, any>; // The proxied, registered service instance
+  _rawService?: S; // The raw, un-proxied service instance
+  path: string; // Path of the service being called
   method?: string; 
   type: HookType; 
   params: Params; 
@@ -211,6 +212,6 @@ export interface ServiceOptions<A extends IScorpionApp<any> = IScorpionApp<any>,
  * Data associated with a route in the router.
  */
 export interface ScorpionRouteData {
-  servicePath: string;
+  path: string;
   methodName: string;
 }

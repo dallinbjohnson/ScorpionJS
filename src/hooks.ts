@@ -32,7 +32,7 @@ function matchesPattern(text: string, pattern?: string | RegExp): boolean {
  */
 function filterHooksByType<A extends IScorpionApp<any>, S extends Service<A> | undefined>(
   hooks: HookObject<A, S>[],
-  servicePath: string | undefined,
+  path: string | undefined,
   method: string | undefined,
   checkServicePath = true
 ): {
@@ -47,8 +47,8 @@ function filterHooksByType<A extends IScorpionApp<any>, S extends Service<A> | u
   const aroundHooks: HookObject<A, S>[] = [];
 
   hooks.forEach(hook => {
-    // For service hooks, we don't need to check servicePath (it's implicit)
-    const pathMatches = !checkServicePath || matchesPattern(servicePath || '', hook.servicePathPattern);
+    // For service hooks, we don't need to check path (it's implicit)
+    const pathMatches = !checkServicePath || matchesPattern(path || '', hook.servicePathPattern);
     const methodMatches = matchesPattern(method || '', hook.methodPattern);
     
     if (pathMatches && methodMatches) {
@@ -69,7 +69,7 @@ async function executeStandardHooks<A extends IScorpionApp<any>, S extends Servi
   hooks: HookObject<A, S>[],
   context: HookContext<A, Svc>,
   hookType: 'before' | 'after' | 'error',
-  servicePath: string | undefined,
+  path: string | undefined,
   method: string | undefined,
   suppressErrorLogging = false
 ): Promise<HookContext<A, Svc>> {
@@ -88,7 +88,7 @@ async function executeStandardHooks<A extends IScorpionApp<any>, S extends Servi
     const hookFn = hook.fn;
     
     if (isAroundHookFunction(hookFn)) {
-      console.warn(`[ScorpionJS] Misplaced AroundHookFunction in '${hookType}' hooks. Skipping. Service: ${servicePath}, Method: ${method}`);
+      console.warn(`[ScorpionJS] Misplaced AroundHookFunction in '${hookType}' hooks. Skipping. Service: ${path}, Method: ${method}`);
       continue;
     }
     
@@ -119,7 +119,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
   applicableServiceHooks: HookObject<A, Svc>[]
 ): Promise<HookContext<A, Svc>> {
   let currentContext: HookContext<A, Svc> = initialContext;
-  const { servicePath, method } = initialContext;
+  const { path, method } = initialContext;
 
   // 1. Filter hooks by type and pattern
   const { 
@@ -127,41 +127,72 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
     afterHooks: applicableGlobalAfterHooks, 
     errorHooks: applicableGlobalErrorHooks, 
     aroundHooks: applicableGlobalAroundHooks 
-  } = filterHooksByType(globalHooks, servicePath, method);
+  } = filterHooksByType(globalHooks, path, method);
   
   const { 
     beforeHooks: applicableServiceBeforeHooks, 
     afterHooks: applicableServiceAfterHooks, 
     errorHooks: applicableServiceErrorHooks, 
     aroundHooks: applicableServiceAroundHooks 
-  } = filterHooksByType(applicableServiceHooks, servicePath, method, false);
+  } = filterHooksByType(applicableServiceHooks, path, method, false);
   
   const { 
     beforeHooks: applicableInterceptorBeforeHooks, 
     afterHooks: applicableInterceptorAfterHooks, 
     errorHooks: applicableInterceptorErrorHooks, 
     aroundHooks: applicableInterceptorAroundHooks 
-  } = filterHooksByType(interceptorGlobalHooks, servicePath, method);
+  } = filterHooksByType(interceptorGlobalHooks, path, method);
 
   // Function to execute the main service method
   const callServiceMethod = async (contextForServiceCall: HookContext<A, Svc>): Promise<HookContext<A, Svc>> => {
     let operationContext = { ...contextForServiceCall }; // Work on a copy
-    if (!operationContext.error && operationContext.servicePath && operationContext.method) {
-      const service = operationContext.service; // Svc can be undefined here
-      const serviceMethod = (service as any)?.[operationContext.method] as Function;
+    if (!operationContext.error && operationContext.path && operationContext.method) {
+      const service = operationContext.service;
+      const rawService = (operationContext as any)._rawService || service;
+      const serviceMethod = (rawService as any)?.[operationContext.method] as Function;
       if (service && operationContext.method && typeof serviceMethod === 'function') {
         try {
+          const methodName = operationContext.method;
           const args: any[] = [];
-          const httpMethod = (operationContext.params.req as http.IncomingMessage)?.method?.toUpperCase();
-          if (operationContext.id !== undefined && operationContext.id !== null) args.push(operationContext.id);
-          if ((httpMethod === 'POST' || httpMethod === 'PUT' || httpMethod === 'PATCH') && operationContext.data !== undefined) args.push(operationContext.data);
-          args.push(operationContext.params);
-          operationContext.result = await serviceMethod.apply(service, args);
+
+          // Reconstruct arguments based on standard service method signatures
+          switch (methodName) {
+            case 'find':
+              args.push(operationContext.params);
+              break;
+            case 'get':
+            case 'remove':
+              args.push(operationContext.id);
+              args.push(operationContext.params);
+              break;
+            case 'create':
+              args.push(operationContext.data);
+              args.push(operationContext.params);
+              break;
+            case 'update':
+            case 'patch':
+              args.push(operationContext.id);
+              args.push(operationContext.data);
+              args.push(operationContext.params);
+              break;
+            default:
+              // Basic support for custom methods. Assumes a signature of (id, data, params)
+              // but only includes what's available in the context.
+              if (operationContext.id !== undefined && operationContext.id !== null) {
+                args.push(operationContext.id);
+              }
+              if (operationContext.data !== undefined) {
+                args.push(operationContext.data);
+              }
+              args.push(operationContext.params);
+              break;
+          }
+          operationContext.result = await serviceMethod.apply(rawService, args);
         } catch (err: any) {
           operationContext.error = err;
         }
       } else {
-        operationContext.error = new NotFound(`Service method ${operationContext.servicePath}.${operationContext.method} not found or not a function.`);
+        operationContext.error = new NotFound(`Service method ${operationContext.path}.${operationContext.method} not found or not a function.`);
       }
     }
     return operationContext;
@@ -239,7 +270,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
       applicableGlobalBeforeHooks,
       currentContext,
       'before',
-      servicePath,
+      path,
       method
     );
   }
@@ -250,7 +281,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
       applicableServiceBeforeHooks,
       currentContext,
       'before',
-      servicePath,
+      path,
       method
     );
   }
@@ -261,7 +292,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
       applicableInterceptorBeforeHooks,
       currentContext,
       'before',
-      servicePath,
+      path,
       method
     );
   }
@@ -280,7 +311,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
       applicableInterceptorAfterHooks,
       currentContext,
       'after',
-      servicePath,
+      path,
       method
     );
 
@@ -290,7 +321,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
         applicableServiceAfterHooks,
         currentContext,
         'after',
-        servicePath,
+        path,
         method
       );
     }
@@ -301,7 +332,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
         applicableGlobalAfterHooks,
         currentContext,
         'after',
-        servicePath,
+        path,
         method
       );
     }
@@ -315,7 +346,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
       applicableInterceptorErrorHooks,
       currentContext,
       'error',
-      servicePath,
+      path,
       method,
       true // Suppress error logging for error hooks
     );
@@ -325,7 +356,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
       applicableServiceErrorHooks,
       currentContext,
       'error',
-      servicePath,
+      path,
       method,
       true // Suppress error logging for error hooks
     );
@@ -335,7 +366,7 @@ export async function runHooks<A extends IScorpionApp<any>, Svc extends Service<
       applicableGlobalErrorHooks,
       currentContext,
       'error',
-      servicePath,
+      path,
       method,
       true // Suppress error logging for error hooks
     );

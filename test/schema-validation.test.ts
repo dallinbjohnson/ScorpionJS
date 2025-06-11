@@ -108,7 +108,7 @@ describe('Schema Validation', () => {
 
       // Validation is not automatically applied
       await app.executeServiceCall({
-        servicePath: 'test',
+        path: 'test',
         method: 'create',
         data: { notName: 'test' }
       }); // Should not throw
@@ -282,7 +282,7 @@ describe('Schema Validation', () => {
       
       expect(thrownErrorInvalid, 'Validation hook did not throw an error for invalid query (empty)').to.be.instanceOf(BadRequest);
       if (thrownErrorInvalid) {
-        expect(thrownErrorInvalid.message).to.equal('Validation error');
+        expect(thrownErrorInvalid.message).to.equal('Query validation error');
       }
       expect(validateSpy.called, 'Validator spy was not called by the validation hook for invalid query (empty)').to.be.true;
       expect(findSpy.called, 'Service find method should not have been called due to validation failure (empty)').to.be.false;
@@ -302,7 +302,7 @@ describe('Schema Validation', () => {
       }
       expect(thrownErrorInvalidType, 'Validation hook did not throw an error for invalid query (wrong type)').to.be.instanceOf(BadRequest);
       if (thrownErrorInvalidType) {
-        expect(thrownErrorInvalidType.message).to.equal('Validation error');
+        expect(thrownErrorInvalidType.message).to.equal('Query validation error');
       }
       expect(validateSpy.called, 'Validator spy was not called by the validation hook for invalid query (wrong type)').to.be.true;
       expect(findSpy.called, 'Service find method should not have been called due to validation failure (wrong type)').to.be.false;
@@ -404,42 +404,49 @@ describe('Schema Validation', () => {
         }
       });
       
-      let validationPassed = false;
-      let error: any = null;
+      let errorFromExecuteCall: any = null;
       
-      try {
-        // This should fail validation (missing required 'name' field)
-        await app5.executeServiceCall({
-          servicePath: 'test',
-          method: 'create',
-          data: {}
-        });
-        validationPassed = true; // Should not reach here
-      } catch (e) {
-        error = e;
+      // This should fail validation (missing required 'name' field)
+      const errorResultContext = await app5.executeServiceCall({
+        path: 'test',
+        method: 'create',
+        data: {} // This will cause validateSpy to return { valid: false }
+      });
+
+      // executeServiceCall returns the error in the context, it does not throw
+      errorFromExecuteCall = errorResultContext.error;
+      
+      // Assert that an error was indeed found in the context
+      expect(errorFromExecuteCall, 'executeServiceCall should have returned a context with an error for invalid data').to.not.be.null;
+      expect(errorFromExecuteCall).to.be.instanceOf(BadRequest);
+      if (errorFromExecuteCall) { // type guard for TS
+        expect(errorFromExecuteCall.message).to.equal('Validation error');
+        expect(errorFromExecuteCall.data.errors[0].message).to.equal('Missing required field: name');
       }
-      
-      // If validation passed when it should have failed
-      expect(validationPassed).to.be.false;
-      
-      // Make sure it's a BadRequest error
-      expect(error).to.be.instanceOf(BadRequest);
-      expect(error.message).to.include('Validation error');
-      expect(error.data.errors[0].message).to.include('Missing required field');
+      // Ensure the service method itself wasn't called due to before hook failure
+      // (This requires the service method to be spied on if we want to assert its call count, currently it's not spied for app5.testService.create)
 
       const createResult = await app5.executeServiceCall({
-        servicePath: 'test',
+        path: 'test',
         method: 'create',
         data: { name: 'test' }
       });
       expect(createResult.result).to.deep.equal({ name: 'test' });
 
-      const findResult = await app5.executeServiceCall({
-        servicePath: 'test',
+      // For the 'find' method, the current testSchema doesn't specify a query schema for 'find',
+      // and context.data is undefined, so validateSchema hook as configured will not perform validation.
+      // The validateSpy (app validator) will not be called by validateSchema for this 'find' operation.
+      const findSpyCallCountBefore = validateSpy.callCount;
+      const findResultContext = await app5.executeServiceCall({
+        path: 'test',
         method: 'find',
-        params: { query: { active: 'true' } }
+        params: { query: { active: 'true' } } // This query is not validated by current testSchema setup
       });
-      expect(findResult.result).to.deep.equal({ active: 'true' });
+      expect(findResultContext.error, 'Find operation should not have an error in this setup').to.be.undefined;
+      // The testService.find method returns an empty array.
+      expect(findResultContext.result).to.deep.equal([]);
+      // validateSpy should not be called again if validateSchema doesn't trigger validation for find
+      expect(validateSpy.callCount, 'validateSpy should not be called for find if schema does not trigger it').to.equal(findSpyCallCountBefore);
     });
   });
 
@@ -471,10 +478,12 @@ describe('Schema Validation', () => {
         validate: sandbox.spy((schema: any, data: any, options: any) => {
           // Force invalid result for empty objects
           if (Object.keys(data).length === 0) {
-            return {
+            const resToLog = {
               valid: false,
               errors: [{ message: `Service validator: Missing name` }]
             };
+            console.log('[TEST_SPY_VALIDATOR] app6/test validator returning for empty data:', JSON.stringify(resToLog));
+            return resToLog;
           }
           
           // Check if required fields are present
@@ -496,7 +505,7 @@ describe('Schema Validation', () => {
       const originalServiceCreateSpy = sandbox.spy(testService, 'create');
 
       // Register the service with schemas and validator
-      app6.use('test', { ...testService, options: { validator: serviceValidator, schemas: testSchema } });
+      app6.use('test', testService, { validator: serviceValidator, schemas: testSchema });
       
       const serviceInstance = app6.service('test');
       if (!serviceInstance) {
@@ -590,7 +599,7 @@ describe('Schema Validation', () => {
       const originalServiceCreateSpy = sandbox.spy(testService, 'create');
 
       // Register the service with schemas but NO service-specific validator
-      app7.use('test', { ...testService, options: { schemas: testSchema } });
+      app7.use('test', testService, { schemas: testSchema });
       
       const serviceInstance = app7.service('test');
       if (!serviceInstance) {
