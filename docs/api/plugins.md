@@ -81,7 +81,7 @@ app.configure(swagger({ docsPath: '/docs' }));
 ## Creating Plugins
 
 Plugins are functions that receive the app instance. They can:
-- Register services: `app.service('name', { ... })`
+- Register services: `app.use('name', { ... }, { /* options */ })`
 - Register hooks: `app.hooks({ ... })`
 - Configure transports, integrations, and more
 

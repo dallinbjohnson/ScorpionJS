@@ -32,7 +32,7 @@ import { createApp } from 'scorpionjs';
 
 const app = createApp();
 
-app.service('messages', {
+app.use('messages', {
   async create(data, params) {
     // Create a new message
     const message = {
@@ -72,18 +72,18 @@ app.on('*', (eventName, data) => {
 
 ### Event Listener Cleanup
 
-ScorpionJS automatically cleans up event listeners when a service is unregistered using `app.unservice()`. This prevents memory leaks and ensures that event listeners don't persist after a service is removed.
+ScorpionJS automatically cleans up event listeners when a service is unregistered using `app.unuse()`. This prevents memory leaks and ensures that event listeners don't persist after a service is removed.
 
 ```javascript
 // Register a service
-app.service('messages', messageService);
+app.use('messages', messageService);
 
 // Add event listeners
 app.service('messages').on('created', handleMessageCreated);
 app.on('messages created', handleGlobalMessageCreated);
 
 // Later, unregister the service
-app.unservice('messages');
+app.unuse('messages');
 // All event listeners for the 'messages' service are automatically removed
 ```
 
@@ -106,7 +106,7 @@ ScorpionJS also supports automatic event emission for custom service methods. Wh
 
 ```javascript
 // Service with a custom method
-app.service('calculator', {
+app.use('calculator', {
   async calculateTotal(data) {
     const result = { 
       total: data.items.reduce((sum, item) => sum + item.price, 0),
@@ -131,7 +131,7 @@ In addition to automatic event emission, you can also manually emit custom event
 
 ```javascript
 // Service with manually emitted custom events
-app.service('payments', {
+app.use('payments', {
   async processPayment(data, params) {
     // Process payment logic
     const result = await processPayment(data);
@@ -364,7 +364,7 @@ const app = createApp({
 
 ```javascript
 // Publisher service
-app.service('notifications', {
+app.use('notifications', {
   async create(data, params) {
     // Create notification
     const notification = {
@@ -410,7 +410,7 @@ app.service('sms').on('notifications created', async notification => {
 
 ```javascript
 // Event store service
-app.service('events', {
+app.use('events', {
   async create(data, params) {
     // Store event
     const event = {
@@ -565,7 +565,7 @@ client.on('messages created', message => {
 
 The ScorpionJS event system is implemented using Node.js's built-in `EventEmitter` class. Here's how it works internally:
 
-1. **Service Registration**: When a service is registered with `app.service()`, it's dynamically extended with event methods (`emit`, `on`, `off`) if they don't already exist.
+1. **Service Registration**: When a service is registered with `app.use()`, it's dynamically extended with event methods (`emit`, `on`, `off`) if they don't already exist.
 
 2. **Event Tracking**: All event listeners are tracked in a `serviceEventListeners` object on the app instance, indexed by service path. This enables proper cleanup when services are unregistered.
 
@@ -575,7 +575,7 @@ The ScorpionJS event system is implemented using Node.js's built-in `EventEmitte
 
 5. **Event Context**: Events include context information such as the service instance, path, and other relevant metadata.
 
-6. **Cleanup on Unregistration**: When `app.unservice()` is called, all event listeners associated with that service are automatically removed to prevent memory leaks.
+6. **Cleanup on Unregistration**: When `app.unuse()` is called, all event listeners associated with that service are automatically removed to prevent memory leaks.
 
 ## Advanced Topics
 

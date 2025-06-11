@@ -69,7 +69,7 @@ ScorpionJS automatically maps service methods to REST endpoints:
 
 ### Dynamic Service Integration
 
-The REST transport is designed to work seamlessly with ScorpionJS's dynamic service layer. When a new service is registered using `app.service()`, the REST transport automatically creates the corresponding HTTP endpoints. Conversely, when a service is unregistered using `app.unservice()`, its associated REST endpoints are removed, ensuring that stale routes do not persist.
+The REST transport is designed to work seamlessly with ScorpionJS's dynamic service layer. When a new service is registered using `app.use()`, the REST transport automatically creates the corresponding HTTP endpoints. Conversely, when a service is unregistered using `app.unuse()`, its associated REST endpoints are removed, ensuring that stale routes do not persist.
 
 ### Request Validation
 
@@ -209,7 +209,7 @@ The Socket transport provides real-time communication using WebSockets.
 
 ### Dynamic Service Integration
 
-Similar to the REST transport, the WebSocket transport dynamically adapts to service registrations and unregistrations. When `app.service()` is called, appropriate WebSocket event listeners are set up for the new service's methods. When `app.unservice()` is called, these event listeners are removed, preventing attempts to call methods on non-existent services.
+Similar to the REST transport, the WebSocket transport dynamically adapts to service registrations and unregistrations. When `app.service()` is called, appropriate WebSocket event listeners are set up for the new service's methods. When `app.unuse()` is called, these event listeners are removed, preventing attempts to call methods on non-existent services.
 
 ### Message Validation
 

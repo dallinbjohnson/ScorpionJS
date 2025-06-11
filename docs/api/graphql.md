@@ -26,8 +26,8 @@ import graphqlTransport from 'scorpionjs-graphql';
 const app = createApp();
 
 // Register services
-app.service('users', { /* ... */ });
-app.service('posts', { /* ... */ });
+app.use('users', { /* ... */ });
+app.use('posts', { /* ... */ });
 
 // Configure GraphQL transport
 app.configure(graphqlTransport({

@@ -25,7 +25,7 @@ interface SchemaOptions {
 You can define schemas for your service methods when registering a service:
 
 ```typescript
-app.service('users', usersService, {
+app.use('users', usersService, {
   schemas: {
     // Method-specific schemas
     find: querySchema,        // Schema for the query parameters in find()
@@ -161,7 +161,7 @@ You can also specify different validators for different services, which is usefu
 
 ```typescript
 // Register a service with a custom validator
-app.service('users', usersService, {
+app.use('users', usersService, {
   schemas: {
     create: userSchema,
     update: userSchema
@@ -181,7 +181,7 @@ app.service('users', usersService, {
 });
 
 // Another service with a different validator
-app.service('products', productsService, {
+app.use('products', productsService, {
   schemas: {
     create: productSchema
   },

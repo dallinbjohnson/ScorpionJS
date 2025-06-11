@@ -17,7 +17,7 @@ import path from 'path';
 
 const app = createApp();
 
-app.service('files', {
+app.use('files', {
   async get(id, params) {
     // Return a readable stream
     return fs.createReadStream(path.join('./uploads', id));
@@ -46,7 +46,7 @@ fileStream.pipe(fs.createWriteStream('./downloaded-file.pdf'));
 ScorpionJS automatically detects if a service method returns a stream:
 
 ```javascript
-app.service('data', {
+app.use('data', {
   async get(id) {
     if (id === 'stream') {
       // Return a stream
@@ -83,7 +83,7 @@ import csv from 'csv-parser';
 
 const app = createApp();
 
-app.service('csv', {
+app.use('csv', {
   async get(id, params) {
     // Create a readable stream
     const fileStream = fs.createReadStream(`./data/${id}.csv`);
@@ -120,7 +120,7 @@ import zlib from 'zlib';
 const app = createApp();
 
 // Register a service
-app.service('files', {
+app.use('files', {
   async get(id) {
     return fs.createReadStream(`./files/${id}`);
   }
@@ -193,7 +193,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const app = createApp();
 
-app.service('uploads', {
+app.use('uploads', {
   async create(data, params) {
     // Check if data is a stream
     if (data && typeof data.pipe === 'function') {
@@ -397,7 +397,7 @@ logStream.on('end', () => {
 ScorpionJS respects stream backpressure to prevent memory issues:
 
 ```javascript
-app.service('largeData', {
+app.use('largeData', {
   async find(params) {
     const source = getDataSource(); // Some large data source
     

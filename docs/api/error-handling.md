@@ -117,7 +117,7 @@ app.hooks({
 - Use custom error classes for clarity.
 
 ```javascript
-app.service('users', {
+app.use('users', {
   async get(id) {
     if (!id) throw new Error('User ID is required');
     // ...

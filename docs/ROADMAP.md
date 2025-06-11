@@ -4,7 +4,7 @@ This document outlines the step-by-step plan for developing the ScorpionJS frame
 
 ## Developer Perspective from Docs:
 A developer using ScorpionJS would expect:
-*   **Simplicity and Power:** An easy way to create services (`app.service()`) that are instantly available via multiple transports (REST, WebSockets).
+*   **Simplicity and Power:** An easy way to create services (e.g., using `app.use()` to register them) that are instantly available via multiple transports (REST, WebSockets).
 *   **Flexibility through Hooks:** Granular control over request/response lifecycle using a comprehensive hook system (before, after, error, around, interceptor).
 *   **Scalability:** Features like service discovery for building distributed systems.
 *   **Performance:** Options to use Wasm for CPU-intensive tasks.
@@ -30,8 +30,8 @@ A developer using ScorpionJS would expect:
         *   [x] Mechanism for services/plugins to access configuration.
 
     - [x] **3. Dynamic Service Registration, Unregistration, and Invocation:**
-        *   [x] Implement `app.service('serviceName', serviceInstance, serviceOptions)` for adding services.
-        *   [x] Implement `app.unservice('serviceName')` to remove a service and its associated resources (routes, hooks, event listeners).
+        *   [x] Implement `app.use('serviceName', serviceInstance, serviceOptions)` for adding/registering services.
+        *   [x] Implement `app.unuse('serviceName')` to remove a service and its associated resources (routes, hooks, event listeners).
         *   [x] Develop a dynamic internal mechanism to dispatch calls to service methods, capable of handling runtime service changes.
         *   [x] Implement event emission for both standard and custom service methods.
         *   [x] Allow per-service configuration via `serviceOptions`.

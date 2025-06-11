@@ -33,7 +33,8 @@ flowchart TD
 
 | Method/Property      | Type         | Returns      | Description                                  |
 |----------------------|--------------|-------------|----------------------------------------------|
-| `service(path, service?)` | Function | Service     | Get or register a service at the given path  |
+| `use(path, service, options?)` | Function | Application | Register a service at the given path with optional configurations | 
+| `service(path)` | Function | Service     | Get a registered service at the given path  |
 | `configure(plugin)`  | Function     | Application | Register a plugin/configure function         |
 | `hooks(hooksObj)`    | Function     | Application | Register global hooks                        |
 | `listen(port)`       | Function     | Promise<Server> | Start the server on the specified port    |
@@ -125,15 +126,22 @@ const app = createApp({
 | `discovery` | Object | Service discovery configuration |
 | `logger` | Object | Logger configuration |
 
-### app.service(path, service)
+### app.use(path, service, options?)
 
-Registers a service at the specified path.
+Registers a service at the specified path, with optional service-specific configurations.
 
 ```javascript
-app.service('messages', {
+// Simple registration
+app.use('messages', {
   async find(params) {
     return [];
   }
+});
+
+// Registration with options (e.g., for service-specific validator or schemas)
+app.use('another-service', new MyServiceClass(), {
+  validator: myCustomValidator,
+  schemas: { create: myCreateSchema }
 });
 ```
 
@@ -142,7 +150,8 @@ app.service('messages', {
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `path` | String | The path to register the service under |
-| `service` | Object | The service object or class |
+| `service` | Object/Class | The service object or class instance |
+| `options` (optional) | Object | Service-specific configurations (e.g., `validator`, `schemas`, `events`) |
 
 ### app.hooks(hooks)
 
@@ -184,6 +193,6 @@ Configures the application with the provided callback.
 ```javascript
 app.configure(app => {
   // Configure the application
-  app.service('messages', { /* ... */ });
+  app.use('messages', { /* ... */ });
 });
 ```

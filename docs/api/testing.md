@@ -57,7 +57,7 @@ describe('Messages Service', () => {
 
   beforeEach(() => {
     app = createApp();
-    app.service('messages', messagesService());
+    app.use('messages', messagesService());
   });
 
   it('creates a message', async () => {
@@ -108,7 +108,7 @@ describe('Authenticate Hook', () => {
 
 ```javascript
 const mockDb = { find: jest.fn().mockResolvedValue([]) };
-app.service('users', {
+app.use('users', {
   async find() { return mockDb.find(); }
 });
 ```
@@ -148,7 +148,7 @@ describe('User Service', () => {
 
   beforeEach(() => {
     app = createApp();
-    app.service('users', new UserService());
+    app.use('users', new UserService());
     service = app.service('users');
   });
 

@@ -154,7 +154,7 @@ Services are automatically registered with the discovery mechanism when they are
 
 ```javascript
 // Register a service
-app.service('messages', {
+app.use('messages', {
   async find() {
     return [{ text: 'Hello' }];
   }
@@ -166,7 +166,7 @@ app.service('messages', {
 You can manually register services with additional metadata:
 
 ```javascript
-app.service('messages', {
+app.use('messages', {
   // Service implementation
   async find() {
     return [{ text: 'Hello' }];
@@ -448,7 +448,7 @@ const gateway = createApp({
 });
 
 // Register API services
-gateway.service('api', { /* ... */ });
+gateway.use('api', { /* ... */ });
 
 // Start the gateway
 gateway.listen(3000);

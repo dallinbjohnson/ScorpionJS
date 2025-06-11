@@ -478,23 +478,28 @@ const app = createApp(config);
 Services can have their own configuration:
 
 ```javascript
-app.service('users', {
-  // Service-specific configuration
-  config: {
+app.use('users',
+  { // Service implementation
+    async find(params) {
+      // Access framework and custom configuration from this.options
+      const limit = params.query.$limit || this.options.pagination.default;
+      const roles = this.options.config.roles;
+      
+      // Implementation
+      console.log(`Fetching with limit: ${limit}, allowed roles: ${roles.join(', ')}`);
+    }
+  },
+  { // Service options
     pagination: {
       default: 10,
       max: 100
     },
-    roles: ['user', 'admin', 'guest']
-  },
-  
-  async find(params) {
-    // Access service configuration
-    const limit = params.query.$limit || this.config.pagination.default;
-    
-    // Implementation
+    config: {
+      // Custom configuration for this service
+      roles: ['user', 'admin', 'guest']
+    }
   }
-});
+);
 ```
 
 ## Configuration Inheritance
@@ -528,8 +533,7 @@ const usersServiceConfig = {
 const app = createApp(baseConfig);
 
 // Register service with inherited configuration
-app.service('users', {
-  config: usersServiceConfig,
+app.use('users', { 
   
   async find(params) {
     // Access combined configuration

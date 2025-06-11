@@ -134,8 +134,11 @@ class UserService implements ServiceMethods<User> {
   // Other methods: update, patch, remove
 }
 
-// Register the service
-app.service<User>('users', new UserService());
+// Register the service (with type assertion for the service instance if needed, or let options define it)
+app.use('users', new UserService());
+
+// Or, if you need to pass options and ensure type safety for those options with the service:
+// app.use<UserService>('users', new UserService(), { /* typed options here */ });
 
 // Get a typed service
 const userService = app.service<User>('users');

@@ -41,7 +41,7 @@ const messageService = {
   }
 };
 
-app.service('messages', messageService);
+app.use('messages', messageService);
 ```
 
 Services can be registered at any point during the application's lifecycle, not just at startup. This allows for dynamic application composition, for example, when loading plugins that provide their own services.
@@ -52,9 +52,10 @@ Using a class can be beneficial for organizing more complex services, managing i
 
 ```javascript
 class MessageService {
-  constructor(options) {
+  constructor(internalConfig) { // e.g., specific settings for this service instance
     this.messages = [];
-    this.options = options; // Example of passing options
+    this.internalConfig = internalConfig; // Store internal config passed to constructor
+    // console.log('MessageService instantiated with internalConfig:', internalConfig);
   }
 
   // Standard method
@@ -98,13 +99,64 @@ class MessageService {
   }
 }
 
-app.service('messages', new MessageService({ /* options */ }));
+app.use('messages', new MessageService({ customInternalSetting: 'hello from constructor' }));
+
+// Note: Options passed directly to 'new MessageService()' as above are for the service's own constructor (internalConfig).
+// For framework-level service options (e.g., custom validators, schemas for validation), you would provide them as a third argument to app.use().
+// See the 'Service Options' section directly below for detailed examples of this pattern (e.g., app.use('path', new ServiceClass(), { validator: myValidator })).
 ```
 Both approaches are equally valid. The choice depends on your preference and the complexity of the service.
 
+### Service Options
+
+When registering a service using `app.use()`, you can provide an optional third argument for service-specific options. This argument is an object containing configurations specific to that service instance. This is the primary way to provide service-level settings like custom validators, schemas for validation, or other metadata that the service or its hooks might use.
+
+Key options include:
+
+*   `validator`: An instance of a validator (e.g., a wrapper around Ajv or Zod) to be used specifically for this service, overriding any app-level default validator.
+*   `schemas`: An object mapping service method names (e.g., 'create', 'find', 'all') to their respective data or query validation schemas. These schemas are then used by validation hooks like `validateData` or `validateQuery`.
+*   `events`: An array of custom event names that this service might emit, in addition to standard CRUD events.
+*   Any other properties added to this options object will be available on `context.service._options` within hooks and the service methods themselves.
+
+**Example:**
+
+```javascript
+// Assuming you have a validator instance and schema definitions
+// const myServiceValidator = new MyCustomValidator();
+// const createDataSchema = { /* ... schema for create data ... */ };
+// const findQuerySchema = { /* ... schema for find query params ... */ };
+
+class MyDataService {
+  async create(data, params) {
+    // ... creation logic
+    return data;
+  }
+  async find(params) {
+    // ... find logic
+    return [];
+  }
+}
+
+app.use('my-data', new MyDataService(), {
+  validator: myServiceValidator, // This service will use its own validator
+  schemas: {
+    create: createDataSchema,    // Schema for the 'create' method's data
+    find: findQuerySchema,       // Schema for the 'find' method's query parameters
+    // 'all': generalSchema     // Optionally, a schema for all methods if not specified
+  },
+  customOption: 'someValue'      // This will be available as context.service._options.customOption
+});
+
+// Now, when 'my-data' service's 'create' method is called,
+// if a validation hook is in place, it can use 'myServiceValidator'
+// and 'createDataSchema' from context.service._options.
+```
+
+This mechanism allows for fine-grained control over service behavior and integrates tightly with the hook system, especially for features like schema validation.
+
 ### Unregistering Services (`app.unservice`)
 
-ScorpionJS allows for the dynamic unregistration of services using the `app.unservice(path)` method. This is crucial for scenarios like plugin unloading, hot-swapping service implementations, or reconfiguring an application at runtime without a full restart.
+ScorpionJS allows for the dynamic unregistration of services using the `app.unuse(path)` method. This is crucial for scenarios like plugin unloading, hot-swapping service implementations, or reconfiguring an application at runtime without a full restart.
 
 When a service is unregistered, ScorpionJS performs the following actions:
 
@@ -121,7 +173,7 @@ When a service is unregistered, ScorpionJS performs the following actions:
 // app.service('myDynamicService', new MyDynamicService());
 
 // Later, to unregister it:
-const unregisteredService = app.unservice('myDynamicService');
+const unregisteredService = app.unuse('myDynamicService');
 
 if (unregisteredService) {
   console.log(`Service 'myDynamicService' has been unregistered.`);
@@ -132,7 +184,7 @@ if (unregisteredService) {
 }
 ```
 
-The `app.unservice(path)` method returns the service instance that was removed if successful, or `undefined` if no service was found registered at the given path.
+The `app.unuse(path)` method returns the service instance that was removed if successful, or `undefined` if no service was found registered at the given path.
 
 This dynamic registration and unregistration capability is fundamental to ScorpionJS's design for building flexible and adaptable applications.
 
@@ -512,7 +564,7 @@ class TaskService {
 }
 
 // Registering the service
-// app.service('tasks', new TaskService());
+// app.use('tasks', new TaskService());
 ```
 
 **Calling Custom Methods (Server-Side):**
@@ -581,7 +633,7 @@ The exact API for this is a design choice for the ScorpionJS framework. Here are
     You might provide routing hints when registering the service:
     ```javascript
     // Conceptual example
-    app.service('tasks', new TaskService(), {
+    app.use('tasks', new TaskService(), {
       // Options to map specific custom methods to HTTP verbs/paths
       customRoutes: {
         // Example: Override standard 'create' and map a custom 'approve' method
@@ -660,7 +712,7 @@ class FileService {
   }
 }
 
-// app.service('files', new FileService());
+// app.use('files', new FileService());
 ```
 When a client requests this `download` method (e.g., via `GET /files/download?fileName=report.pdf` if routed appropriately), the framework would pipe the returned stream.
 
@@ -699,7 +751,7 @@ class FileService {
   }
 }
 
-// app.service('files', new FileService());
+// app.use('files', new FileService());
 ```
 In this conceptual example, `params.stream` would be a `Readable` stream representing the uploaded file data. The service method then pipes it to a `Writable` stream (e.g., a file). The exact way to access the incoming stream and its metadata will depend on the HTTP body parser and WebSocket handling in ScorpionJS.
 

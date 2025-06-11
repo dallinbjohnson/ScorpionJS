@@ -59,7 +59,7 @@ const app = createApp({
 });
 
 // Services and other app setup
-app.service('users', { /* ... */ });
+app.use('users', { /* ... */ });
 
 app.listen(3000);
 ```

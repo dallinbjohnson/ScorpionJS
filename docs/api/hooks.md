@@ -140,6 +140,22 @@ app.hooks('POST:/api/payments/*', {
 
 ### More Examples
 
+**Important Note on Service-Specific Schemas & Validators:** For hooks like `validateData` or `validateQuery` (or any custom hook relying on `context.service._options.schemas` or `context.service._options.validator`) to correctly use service-specific schemas or a service-specific validator, the service **must** be registered with these options. This is done via the third argument to `app.use()`:
+
+```javascript
+// Example: Registering a service with its own schemas and validator
+app.use(
+  'myFeature',
+  new MyFeatureService(),
+  {
+    schemas: { create: createSchemaForMyFeature /*, ...other methods */ },
+    validator: myFeatureSpecificValidatorInstance
+  }
+);
+```
+
+Without this, validation hooks will typically fall back to app-level defaults if configured, or might not find specific schemas to apply.
+
 Here are a few more conceptual examples showcasing how hooks can be used with other framework features:
 
 **Schema Validation (Before Hook):**
@@ -265,7 +281,7 @@ Developers can add custom properties to `context.params` to pass information bet
 
 ## Dynamic Hook Management and Unregistration
 
-When a service is unregistered using `app.unservice('serviceName')`, all hooks specifically registered for that service (via `app.service('serviceName').hooks(...)`) are automatically removed and will no longer be executed. 
+When a service is unregistered using `app.unuse('serviceName')`, all hooks specifically registered for that service (via `app.service('serviceName').hooks(...)`) are automatically removed and will no longer be executed. 
 
 Pattern-based hooks (e.g., `app.hooks('/api/my-service/*', {...})`) are evaluated at runtime. If a service path no longer matches a pattern due to unregistration, the hooks associated with that pattern will naturally cease to apply to the removed service's path.
 

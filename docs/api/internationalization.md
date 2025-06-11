@@ -49,7 +49,7 @@ app.configure(i18nPlugin({
 }));
 
 // Example service using i18n
-app.service('notifications', {
+app.use('notifications', {
   async sendWelcome(user, params) {
     const message = params.t('notifications.welcomeMessage', { appName: 'ScorpionJS App' });
     // ... send notification with localized message ...

@@ -30,8 +30,8 @@ const app = createApp({
 Services are the core building blocks of a ScorpionJS application. Each service provides a set of methods that can be called both locally and remotely.
 
 ```javascript
-// Define a service
-app.service('messages', {
+// Define and register a service
+app.use('messages', {
   // Standard REST methods
   async find(params) {
     // Return a list of messages
@@ -182,7 +182,7 @@ const messageSchema = {
 };
 
 // Register a service with schema validation
-app.service('messages', {
+app.use('messages', {
   schema: {
     create: messageSchema,
     update: messageSchema,
@@ -276,7 +276,7 @@ const app = createApp({
 });
 
 // Service-specific timeout
-app.service('longRunningService', {
+app.use('longRunningService', {
   timeout: 30000,          // 30 seconds timeout
   
   async processData(data) {

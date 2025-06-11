@@ -39,17 +39,20 @@ const app = createApp({
 ### Service-specific Configuration
 
 ```javascript
-app.service('users', {
-  circuitBreaker: {
-    enabled: true,
-    threshold: 0.3,        // Lower threshold for this critical service
-    minRequests: 10        // Trip after fewer requests
+app.use('users', 
+  { // Service implementation
+    async find() {
+      // ...
+    }
   },
-  
-  async find() {
-    // Service implementation
+  { // Service options
+    circuitBreaker: {
+      enabled: true,
+      threshold: 0.3,        // Lower threshold for this critical service
+      minRequests: 10        // Trip after fewer requests
+    }
   }
-});
+);
 ```
 
 ### Circuit Breaker States
@@ -103,17 +106,20 @@ const app = createApp({
 ### Service-specific Configuration
 
 ```javascript
-app.service('fileUpload', {
-  bulkhead: {
-    enabled: true,
-    concurrency: 3,        // Limit concurrent file uploads
-    maxQueueSize: 25       // Smaller queue for file uploads
+app.use('fileUpload', 
+  { // Service implementation
+    async create(data) {
+      // File upload implementation
+    }
   },
-  
-  async create(data) {
-    // File upload implementation
+  { // Service options
+    bulkhead: {
+      enabled: true,
+      concurrency: 3,        // Limit concurrent file uploads
+      maxQueueSize: 25       // Smaller queue for file uploads
+    }
   }
-});
+);
 ```
 
 ### Events
@@ -159,18 +165,21 @@ const app = createApp({
 ### Service-specific Configuration
 
 ```javascript
-app.service('externalApi', {
-  retry: {
-    enabled: true,
-    retries: 5,            // More retries for external API
-    delay: 500,            // Start with shorter delay
-    check: err => err.code >= 500 // Only retry on server errors
+app.use('externalApi', 
+  { // Service implementation
+    async find() {
+      // External API call implementation
+    }
   },
-  
-  async find() {
-    // External API call implementation
+  { // Service options
+    retry: {
+      enabled: true,
+      retries: 5,            // More retries for external API
+      delay: 500,            // Start with shorter delay
+      check: err => err.code >= 500 // Only retry on server errors
+    }
   }
-});
+);
 ```
 
 ### Events
