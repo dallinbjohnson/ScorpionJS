@@ -1,6 +1,9 @@
 // src/types.ts
 import * as http from 'http';
+import { Readable, Writable } from "stream";
+import { createRouter } from "rou3";
 import { ScorpionError } from './errors.js';
+import { ParsedQs } from 'qs';
 
 /**
  * Configuration options for creating a ScorpionJS application
@@ -21,6 +24,7 @@ export interface BodyParserJsonOptions {
   strict?: boolean;
   reviver?: (key: string, value: any) => any;
   type?: string | string[] | ((req: any) => boolean);
+  encoding?: BufferEncoding; // Added for specifying buffer encoding
 }
 
 export interface BodyParserUrlencodedOptions {
@@ -28,6 +32,7 @@ export interface BodyParserUrlencodedOptions {
   limit?: string | number;
   parameterLimit?: number;
   type?: string | string[] | ((req: any) => boolean);
+  allowPrototypes?: boolean; // Added for qs.parse option
 }
 
 export interface BodyParserTextOptions {
@@ -78,6 +83,14 @@ export interface ScorpionConfig {
  * Base interface for a Scorpion application instance.
  * Used to break circular dependencies for type information.
  */
+export interface ExecuteServiceCallOptions<A extends IScorpionApp<any>, Svc extends Service<A>> {
+  path: string;
+  method: keyof Svc | string;
+  params?: Params;
+  data?: any;
+  id?: string | number | null;
+}
+
 export interface IScorpionApp<AppServices extends Record<string, Service<any>> = Record<string, any>> {
   services: AppServices;
   _isScorpionAppBrand: never; // Ensures nominal typing if structural typing becomes an issue
@@ -91,7 +104,7 @@ export interface IScorpionApp<AppServices extends Record<string, Service<any>> =
   service(path: string): RegisteredService<any, any, any>;
 
   // Server methods
-  listen(port?: number, hostname?: string, listeningListener?: () => void): Promise<http.Server | undefined>;
+  listen(port?: number, host?: string, callback?: () => void): Promise<http.Server | undefined>;
 
   // Hook registration
   hooks(config: HooksApiConfig<any, any>): this;
@@ -102,10 +115,27 @@ export interface IScorpionApp<AppServices extends Record<string, Service<any>> =
 
   // Direct service call execution for testing/internal use
   executeServiceCall<Svc extends Service<any>>(
-    options: any // Using 'any' to avoid circular dependency on ExecuteServiceCallOptions
+    options: ExecuteServiceCallOptions<this, Svc>
   ): Promise<any>;
+
+  // Standard EventEmitter methods needed for app/transport interaction
+  emit(event: string | symbol, ...args: any[]): boolean;
+  on(event: string | symbol, listener: (...args: any[]) => void): this;
+  off(event: string | symbol, listener: (...args: any[]) => void): this;
 }
 
+/**
+ * Internal interface for ScorpionApp, exposing methods needed by rest.ts
+ * but not part of the public IScorpionApp API.
+ */
+export interface IScorpionAppInternal<AppServices extends Record<string, Service<any>> = Record<string, any>>
+  extends IScorpionApp<AppServices> {
+  // Re-declaring to try and fix type errors, should be inherited
+  emit(event: string | symbol, ...args: any[]): boolean;
+  on(event: string | symbol, listener: (...args: any[]) => void): this;
+  off(event: string | symbol, listener: (...args: any[]) => void): this;
+  getRouter(): ReturnType<typeof createRouter<ScorpionRouteData>>;
+}
 
 /**
  * Represents the parameters for a service method call.
@@ -114,7 +144,12 @@ export interface IScorpionApp<AppServices extends Record<string, Service<any>> =
  */
 export interface Params {
   route?: Record<string, string>; // Parameters extracted from the route path, e.g., /users/:id
-  query?: Record<string, string | string[]>; // Parsed query string parameters
+  query?: ParsedQs; // Parsed query string parameters
+  provider?: string; // e.g., 'rest', 'websocket'
+  headers?: http.IncomingHttpHeaders;
+  connection?: any; // Information about the connection
+  user?: any; // Authenticated user
+  payload?: any; // Request body
   [key: string]: any; // Allow other custom parameters
 }
 
@@ -283,6 +318,9 @@ export interface ServiceOptions<A extends IScorpionApp<any> = IScorpionApp<any>,
  * Data associated with a route in the router.
  */
 export interface ScorpionRouteData {
-  path: string;
-  methodName: string;
+  httpMethod: string; // e.g., 'GET', 'POST'
+  servicePath: string; // e.g., 'messages'
+  serviceMethodName: string; // e.g., 'find', 'create', 'customMethod'
+  service: Service<any>;
+  allowStream?: boolean;
 }

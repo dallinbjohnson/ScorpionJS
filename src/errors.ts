@@ -4,6 +4,10 @@ export class ScorpionError extends Error {
   public readonly code: number;
   public readonly data?: any;
 
+  public get statusCode(): number {
+    return this.code;
+  }
+
   constructor(message: string, code: number, data?: any) {
     super(message);
     this.code = code;
@@ -39,6 +43,20 @@ export class PayloadTooLarge extends ScorpionError {
   constructor(message = 'Payload Too Large', data?: any) {
     super(message, 413, data);
     this.name = 'PayloadTooLarge';
+  }
+}
+
+export class MethodNotAllowed extends ScorpionError {
+  constructor(message = 'Method Not Allowed', data?: any) {
+    super(message, 405, data);
+    this.name = 'MethodNotAllowed';
+  }
+}
+
+export class InternalServerError extends ScorpionError {
+  constructor(message = 'Internal Server Error', data?: any) {
+    super(message, 500, data);
+    this.name = 'InternalServerError';
   }
 }
 

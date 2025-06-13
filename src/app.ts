@@ -1,16 +1,15 @@
 // src/app.ts
 
-import * as http from "http";
-import * as fs from "fs";
-import * as path from "path";
-import { URL } from "url";
-import * as querystring from 'querystring';
-import * as qs from 'qs';
-import * as zlib from "zlib";
-import { Readable } from "stream";
+import * as fs from 'fs';
+import * as path from 'path';
+import * as http from 'http';
+import { NotFound, MethodNotAllowed, InternalServerError, BadRequest, ScorpionError } from './errors.js';
+import { startRestServer } from './rest.js';
 import { EventEmitter } from "events";
 import {
   IScorpionApp,
+  IScorpionAppInternal,
+  ExecuteServiceCallOptions,
   RegisteredService,
   Service,
   ServiceOptions,
@@ -36,52 +35,15 @@ import {
   BodyParserRawOptions,
   CompressionOptions
 } from "./types.js";
-import { runHooks } from "./hooks.js";
-import { ScorpionError, BadRequest, NotFound, PayloadTooLarge, UnsupportedMediaType } from "./errors.js";
+import { runHooks } from './hooks.js';
 import { createRouter, addRoute, findRoute, removeRoute } from "rou3";
 import { validateSchema, registerSchemas } from "./schema.js";
 
-function parseSizeToBytes(sizeStr: string | number): number {
-  if (typeof sizeStr === 'number') return sizeStr;
-  if (typeof sizeStr !== 'string') return 0; // Or throw error
-
-  const units: { [key: string]: number } = {
-    b: 1,
-    kb: 1024,
-    mb: 1024 * 1024,
-    gb: 1024 * 1024 * 1024,
-    tb: 1024 * 1024 * 1024 * 1024,
-  };
-
-  const match = sizeStr.toLowerCase().match(/^(\d+(?:\.\d+)?)\s*([a-z]+)?$/);
-  if (!match) return 0; // Or throw error for invalid format
-
-  const value = parseFloat(match[1]);
-  const unit = match[2] || 'b'; // Default to bytes if no unit
-
-  return Math.floor(value * (units[unit] || 1));
-}
-
-// Interface for executeServiceCall options
-export interface ExecuteServiceCallOptions<
-  A extends IScorpionApp<any>,
-  Svc extends Service<A>
-> {
-  path: string;
-  method: keyof Svc | string; // Allow string for custom methods not strictly in Svc type
-  params?: Params;
-  data?: any;
-  id?: string | number | null;
-  // Potentially other context properties like 'user', 'provider' if needed in future
-}
-
 export class ScorpionApp<
-  AppServices extends Record<string, Service<any>> = Record<
-    string,
-    Service<any>
-  >
-> implements IScorpionApp<AppServices>
-{
+  AppServices extends Record<string, Service<any>> = Record<string, Service<any>>
+>
+extends EventEmitter
+implements IScorpionAppInternal<AppServices> {
   _isScorpionAppBrand!: never;
   // A registry for all services, mapping a path to a service instance.
   private _services: Record<string, Service<this>> = {};
@@ -90,7 +52,7 @@ export class ScorpionApp<
   public get services(): AppServices {
     return this._services as AppServices;
   }
-  private router: ReturnType<typeof createRouter<ScorpionRouteData>>;
+  private readonly _router: ReturnType<typeof createRouter<ScorpionRouteData>>;
   private globalHooks: HookObject<this, Service<this> | undefined>[] = [];
   private interceptorGlobalHooks: HookObject<
     this,
@@ -109,8 +71,32 @@ export class ScorpionApp<
   private _config: ScorpionConfig = {};
 
   constructor(config: ScorpionConfig = {}) {
-    this.router = createRouter<ScorpionRouteData>();
+    super(); // Call EventEmitter constructor
+    this._router = createRouter<ScorpionRouteData>();
     this._config = this._loadConfig(config);
+  }
+
+  // Explicitly implement EventEmitter methods to satisfy interfaces
+  public emit(event: string | symbol, ...args: any[]): boolean {
+    return super.emit(event, ...args);
+  }
+
+  public on(event: string | symbol, listener: (...args: any[]) => void): this {
+    super.on(event, listener);
+    return this;
+  }
+
+  public off(event: string | symbol, listener: (...args: any[]) => void): this {
+    super.off(event, listener);
+    return this;
+  }
+
+  /**
+   * Returns the internal router instance.
+   * This is used by transports to register routes.
+   */
+  public getRouter(): ReturnType<typeof createRouter<ScorpionRouteData>> {
+    return this._router;
   }
 
   private _getAllMethodNames(obj: any): string[] {
@@ -439,6 +425,8 @@ export class ScorpionApp<
               params,
             });
 
+            // TODO: Add any other necessary setup or teardown logic here
+
             // Return the result or throw the error
             if (result.error) {
               throw result.error;
@@ -593,9 +581,11 @@ export class ScorpionApp<
         console.log(
           `  Adding route: ${httpMethod} ${fullRoutePath} -> ${path}.${methodName}`
         );
-        addRoute(this.router, httpMethod, fullRoutePath, {
-          path: path,
-          methodName,
+        addRoute(this._router, httpMethod, fullRoutePath, {
+          httpMethod,
+          servicePath: path,
+          serviceMethodName: methodName,
+          service: serviceProxy
         });
       }
     }
@@ -820,398 +810,20 @@ export class ScorpionApp<
     return this;
   }
 
-  private async parseRequestBody(req: http.IncomingMessage): Promise<any> {
-    const bodyParserOptions = this.get<BodyParserOptions | undefined>("server.bodyParser") || {};
-    const contentType = req.headers["content-type"]?.split(";")[0].trim().toLowerCase() || '';
-
-    // Determine parser, options, and body size limit based on content type.
-    let parserType: 'json' | 'urlencoded' | 'text' | 'raw' | 'none' = 'none';
-    let parserOptions: any = {};
-    let bodyLimit: number = 0;
-
-    if (contentType === "application/json" && bodyParserOptions.json !== false) {
-      parserType = 'json';
-      parserOptions = typeof bodyParserOptions.json === 'object' ? bodyParserOptions.json : {};
-      bodyLimit = parseSizeToBytes(parserOptions.limit || "1mb");
-    } else if (contentType === "application/x-www-form-urlencoded" && bodyParserOptions.urlencoded !== false) {
-      parserType = 'urlencoded';
-      parserOptions = typeof bodyParserOptions.urlencoded === 'object' ? bodyParserOptions.urlencoded : {};
-      bodyLimit = parseSizeToBytes(parserOptions.limit || "1mb");
-    } else if (contentType === "text/plain" && bodyParserOptions.text !== false) {
-      parserType = 'text';
-      parserOptions = typeof bodyParserOptions.text === 'object' ? bodyParserOptions.text : {};
-      bodyLimit = parseSizeToBytes(parserOptions.limit || "1mb");
-    } else if (bodyParserOptions.raw !== false && contentType) {
-      parserType = 'raw';
-      parserOptions = typeof bodyParserOptions.raw === 'object' ? bodyParserOptions.raw : {};
-      bodyLimit = parseSizeToBytes(parserOptions.limit || "10mb");
-    } else if (contentType) {
-      // A content type was provided, but no parser is configured for it.
-      return Promise.reject(new UnsupportedMediaType(`Content type '${contentType}' not supported.`));
-    }
-
-    return new Promise((resolve, reject) => {
-      // Unconditionally attach listeners to consume the stream and prevent hangs.
-      let bodyBuffer = Buffer.alloc(0);
-      let currentSize = 0;
-
-      req.on("data", (chunk) => {
-        currentSize += chunk.length;
-        if (bodyLimit > 0 && currentSize > bodyLimit) {
-          // Do not destroy the request here, allow the error to propagate
-          // so a proper HTTP response can be sent.
-          // The stream will continue to drain but data won't be buffered further if we return early.
-          // However, rejecting here means the 'end' event might not be processed as expected by some.
-          // For robust handling, we should set a flag and reject in 'end' or 'error'.
-          // But for this specific test case, immediate rejection should be caught by _handleHttpRequest.
-          return reject(new PayloadTooLarge(`Request body exceeds limit of ${bodyLimit} bytes`));
-        }
-        bodyBuffer = Buffer.concat([bodyBuffer, chunk]);
-      });
-
-      req.on("error", (err) => {
-        reject(new ScorpionError("Error reading request stream: " + err.message, 500, err));
-      });
-
-      req.on("end", () => {
-        // Once the stream has ended, proceed with parsing.
-        if (parserType === 'none' || bodyBuffer.length === 0) {
-          return resolve(undefined);
-        }
-
-        try {
-          switch (parserType) {
-            case "json":
-              resolve(JSON.parse(bodyBuffer.toString()));
-              break;
-            case "urlencoded":
-              if (parserOptions.extended) {
-                resolve(qs.parse(bodyBuffer.toString()));
-              } else {
-                const parsed = querystring.parse(bodyBuffer.toString());
-                // querystring.parse returns string | string[] | ParsedUrlQueryInput | ParsedUrlQueryInput[]
-                // We simplify to string | string[] for non-extended, and then to string for the most basic case
-                const simplified: Record<string, string | string[]> = {};
-                for (const key in parsed) {
-                  const value = parsed[key];
-                  simplified[key] = Array.isArray(value) ? value[0] : value as string; 
-                }
-                resolve(simplified);
-              }
-              break;
-            case "text":
-              resolve(bodyBuffer.toString((parserOptions.defaultCharset || 'utf8') as BufferEncoding));
-              break;
-            case "raw":
-              resolve(bodyBuffer);
-              break;
-            default:
-              resolve(undefined);
-          }
-        } catch (e: any) {
-          if (e instanceof SyntaxError) {
-            reject(new BadRequest(`Invalid ${parserType} in request body: ${e.message}`));
-          } else {
-            reject(new BadRequest(`Error parsing request body: ${e.message}`));
-          }
-        }
-      });
-    });
-  }
-
   public async listen(
     port?: number,
     host?: string,
-    listeningListener?: () => void
+    callback?: () => void
   ): Promise<http.Server | undefined> {
     return new Promise((resolve, reject) => {
-      const serverPort = port ?? this._config.server?.port ?? 3030;
-      const serverHost = host ?? this._config.server?.host ?? 'localhost';
+      const appPort = port !== undefined ? port : (this.get("server.port") as number | undefined) || 3030;
+      const appHost = host !== undefined ? host : (this.get("server.host") as string | undefined) || "localhost";
 
-      const server = http.createServer(async (req, res) => {
-        try {
-          const corsConfig = this.get<boolean | CorsOptions>('server.cors');
+      // Start the REST server by calling the function from rest.ts
+      return startRestServer(this, appPort, appHost, callback);
 
-          if (corsConfig) {
-            const options: CorsOptions = typeof corsConfig === 'boolean' ? {} : corsConfig;
-            const origin = options.origin ?? '*';
-            const reqOrigin = req.headers.origin;
-
-            let allowedOrigin: string | undefined;
-
-            if (typeof origin === 'boolean' && origin) {
-              allowedOrigin = '*';
-            } else if (typeof origin === 'string') {
-              if (origin === '*') {
-                allowedOrigin = '*';
-              } else if (reqOrigin === origin) {
-                allowedOrigin = origin;
-              }
-            } else if (origin instanceof RegExp) {
-              if (reqOrigin && origin.test(reqOrigin)) {
-                allowedOrigin = reqOrigin;
-              }
-            } else if (Array.isArray(origin)) {
-              if (reqOrigin && origin.includes(reqOrigin)) {
-                allowedOrigin = reqOrigin;
-              }
-            }
-
-            if (allowedOrigin) {
-              res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
-              res.setHeader('Vary', 'Origin');
-            }
-
-            const methods = options.methods ?? ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
-            res.setHeader('Access-Control-Allow-Methods', Array.isArray(methods) ? methods.join(',') : methods);
-
-            const allowedHeaders = options.allowedHeaders ?? ['Content-Type', 'Authorization', 'X-Requested-With'];
-            res.setHeader('Access-Control-Allow-Headers', Array.isArray(allowedHeaders) ? allowedHeaders.join(',') : allowedHeaders);
-
-            if (options.credentials) {
-              res.setHeader('Access-Control-Allow-Credentials', 'true');
-            }
-
-            if (options.exposedHeaders) {
-              res.setHeader('Access-Control-Expose-Headers', Array.isArray(options.exposedHeaders) ? options.exposedHeaders.join(',') : options.exposedHeaders);
-            }
-
-            if (typeof options.maxAge === 'number') {
-              res.setHeader('Access-Control-Max-Age', options.maxAge.toString());
-            }
-
-            if (req.method === 'OPTIONS') {
-              res.writeHead(options.optionsSuccessStatus ?? 204);
-              res.end();
-              return;
-            }
-          }
-
-          await this._handleHttpRequest(req, res);
-        } catch (error: any) {
-          // Ensure response is not already sent before sending an error response
-          if (!res.headersSent) {
-            this._sendErrorResponse(res, error);
-          }
-        }
-      });
-
-      server.on('error', (err) => {
-        reject(err);
-      });
-
-      server.listen(serverPort, serverHost, () => {
-        console.log(`Scorpion app listening at http://${serverHost}:${serverPort}`);
-        if (listeningListener) {
-          listeningListener();
-        }
-        resolve(server);
-      });
+      resolve(undefined);
     });
-  }
-
-  /**
-   * Handle an incoming HTTP request by routing it to the appropriate service method.
-   *
-   * @param req The HTTP request object
-   * @param res The HTTP response object
-   */
-  private async _handleHttpRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse
-  ): Promise<void> {
-    const { method, url } = req;
-    if (!method || !url) {
-      throw new BadRequest("Invalid request: missing method or URL");
-    }
-
-    const parsedUrl = new URL(url, `http://${req.headers.host || "localhost"}`);
-    const reqPath = parsedUrl.pathname;
-    const queryParams = this._parseQueryParams(parsedUrl);
-
-    const routeMatch = findRoute(this.router, method, reqPath);
-
-    if (!routeMatch) {
-      throw new NotFound(`Cannot ${method} ${reqPath}`);
-    }
-
-    // Get service and method information
-    const { path, methodName } = routeMatch.data;
-    const service = this.service<Service<this>>(path);
-    const routeParams = routeMatch.params || {};
-    const params: Params = { route: routeParams, query: queryParams };
-
-    // Parse request body for methods that may contain it
-    let data: any;
-    if (["POST", "PUT", "PATCH"].includes(method)) {
-      data = await this.parseRequestBody(req);
-    }
-
-    // Verify service method exists
-    if (typeof (service as any)[methodName] !== "function") {
-      throw new NotFound(
-        `Method '${methodName}' not implemented on service '${path}'`
-      );
-    }
-
-    // Prepare initial context for hook execution
-    const initialContext: HookContext<this, typeof service> = {
-      app: this,
-      service,
-      path,
-      method: methodName,
-      type: "before",
-      params: {
-        ...params,
-        req,
-        res,
-      },
-      id: routeParams?.id,
-      data,
-    };
-
-    // Get applicable hooks
-    const globalHooks = this.globalHooks;
-    const interceptorHooks = this.interceptorGlobalHooks || [];
-    const serviceHooks = this.serviceHooks[path] || [];
-
-    // Execute hooks and service method
-    const finalContext = await this.executeHooks(
-      initialContext,
-      globalHooks,
-      interceptorHooks,
-      serviceHooks as HookObject<this, typeof service>[]
-    );
-
-    // Handle errors if any occurred during hook execution
-    if (finalContext.error) {
-      this._sendErrorResponse(res, finalContext.error, finalContext.statusCode);
-      return;
-    }
-
-    // Send successful response
-    const context = finalContext;
-    res.statusCode = context.statusCode || (context.result ? 200 : 204);
-
-    const body = context.result ? JSON.stringify(context.result) : '';
-    res.setHeader('Connection', 'close');
-
-    if (!body) {
-      res.end();
-      return;
-    }
-
-    const compressionConfig = this.get<CompressionOptions | boolean | undefined>("server.compression");
-
-    // 1. Check if compression is explicitly disabled
-    if (compressionConfig === false) {
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.setHeader("Content-Length", Buffer.byteLength(body));
-      res.end(body);
-      return;
-    }
-
-    // 2. Prepare options and check against threshold
-    const compressionOptions: CompressionOptions = typeof compressionConfig === 'object' ? compressionConfig : {};
-    const threshold = parseSizeToBytes(compressionOptions.threshold ?? '1kb');
-    const acceptEncoding = req.headers['accept-encoding'] || '';
-
-    if (body.length < threshold) {
-      // Body is too small to compress, send uncompressed
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.setHeader("Content-Length", Buffer.byteLength(body));
-      res.end(body);
-      return;
-    }
-
-    // 3. Determine encoding and create compression stream
-    let compressionStream: zlib.Gzip | zlib.Deflate | undefined;
-    let encoding: string | undefined;
-
-    if (acceptEncoding.includes('gzip')) {
-      encoding = 'gzip';
-      compressionStream = zlib.createGzip();
-    } else if (acceptEncoding.includes('deflate')) {
-      encoding = 'deflate';
-      compressionStream = zlib.createDeflate();
-    }
-
-    // 4. Pipe response through stream or send uncompressed
-    if (compressionStream && encoding) {
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.setHeader('Content-Encoding', encoding);
-      const bodyStream = Readable.from(body);
-      bodyStream.pipe(compressionStream).pipe(res);
-    } else {
-      // No supported encoding found in Accept-Encoding header, send uncompressed
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.setHeader("Content-Length", Buffer.byteLength(body));
-      res.end(body);
-    }
-  }
-
-  /**
-   * Parse query parameters from a URL.
-   *
-   * @param parsedUrl The parsed URL object
-   * @returns Record of query parameters, handling arrays of values
-   */
-  private _parseQueryParams(parsedUrl: URL): Record<string, string | string[]> {
-    const queryParams: Record<string, string | string[]> = {};
-
-    parsedUrl.searchParams.forEach((value: string, key: string) => {
-      const existing = queryParams[key];
-      if (existing) {
-        if (Array.isArray(existing)) {
-          existing.push(value);
-        } else {
-          queryParams[key] = [existing, value];
-        }
-      } else {
-        queryParams[key] = value;
-      }
-    });
-
-    return queryParams;
-  }
-
-  /**
-   * Send an error response with appropriate status code and error details.
-   *
-   * @param res The HTTP response object
-   * @param error The error that occurred
-   * @param statusCodeOverride Optional status code to override the error's code
-   */
-  private _sendErrorResponse(
-    res: http.ServerResponse,
-    error: any,
-    statusCodeOverride?: number
-  ): void {
-    let statusCode = statusCodeOverride || 500;
-    let message = "Internal Server Error";
-    let errorName = "Error";
-    let errorData: any;
-
-    if (error instanceof ScorpionError) {
-      statusCode = statusCodeOverride || error.code;
-      message = error.message;
-      errorName = error.name;
-      errorData = error.data;
-    } else if (error instanceof Error) {
-      message = error.message;
-      errorName = error.name;
-      console.error(`Unhandled error:`, error);
-    }
-
-    res.writeHead(statusCode, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        name: errorName,
-        message,
-        code: statusCode,
-        data: errorData,
-      })
-    );
   }
 
   /**
@@ -1403,7 +1015,7 @@ export class ScorpionApp<
       if (typeof (service as any)[method.name] === "function") {
         const fullRoutePath = this._buildRoutePath(path, method.segment);
         console.log(`Removing route: ${method.httpMethod} ${fullRoutePath}`);
-        removeRoute(this.router, method.httpMethod, fullRoutePath);
+        removeRoute(this._router, method.httpMethod, fullRoutePath);
       }
     }
 
@@ -1416,7 +1028,7 @@ export class ScorpionApp<
       ) {
         const fullRoutePath = this._buildRoutePath(path, methodName);
         console.log(`Removing route: POST ${fullRoutePath}`);
-        removeRoute(this.router, "POST", fullRoutePath);
+        removeRoute(this._router, "POST", fullRoutePath);
       }
     }
 
@@ -1462,42 +1074,16 @@ export class ScorpionApp<
   }
 
   /**
-   * Emit an event with data and optional context.
+   * Publish an event with data and optional context using the app's custom event signature.
+   * This is distinct from the standard EventEmitter.emit method.
    *
    * @param event The event name
    * @param data The event data
    * @param context Optional context information
    * @returns The app instance for chaining
    */
-  public emit(event: string, data: any, context?: any): this {
+  public publish(event: string, data: any, context?: any): this {
     this.eventEmitter.emit(event, data, context);
-    return this;
-  }
-
-  /**
-   * Register an event listener.
-   *
-   * @param event The event name or pattern to listen for
-   * @param listener The callback function to execute when the event is emitted
-   * @returns The app instance for chaining
-   */
-  public on(event: string, listener: (data: any, context?: any) => void): this {
-    this.eventEmitter.on(event, listener);
-    return this;
-  }
-
-  /**
-   * Remove an event listener.
-   *
-   * @param event The event name
-   * @param listener The listener function to remove
-   * @returns The app instance for chaining
-   */
-  public off(
-    event: string,
-    listener: (data: any, context?: any) => void
-  ): this {
-    this.eventEmitter.off(event, listener);
     return this;
   }
 
