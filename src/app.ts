@@ -456,10 +456,6 @@ export class ScorpionApp<
     // Attach the registration options to the service proxy itself
     if (options) {
       (serviceProxy as any)._options = options;
-      // The validator function is a class with methods, which JSON.stringify cannot serialize, so we log the object directly.
-      console.log(`[DEBUG app.use for ${path}] Attached _options to serviceProxy. Validator exists: ${!!(serviceProxy as any)._options.validator}`);
-    } else {
-      console.log(`[DEBUG app.use for ${path}] No options provided to attach to serviceProxy`);
     }
 
     // Initialize service event listeners array
@@ -797,7 +793,7 @@ export class ScorpionApp<
    * @param path The dot-notation path to the configuration value.
    * @returns The configuration value at the specified path.
    */
-  public get<T = any>(path: string): T {
+  public get<T = any>(path: string): T | undefined {
     return this._getConfigValue(path) as T;
   }
 
@@ -991,7 +987,6 @@ export class ScorpionApp<
             }
           }
 
-          console.log('[DEBUG] app.listen: Received request, calling _handleHttpRequest');
           await this._handleHttpRequest(req, res);
         } catch (error: any) {
           // Ensure response is not already sent before sending an error response
@@ -1025,7 +1020,6 @@ export class ScorpionApp<
     req: http.IncomingMessage,
     res: http.ServerResponse
   ): Promise<void> {
-    console.log('[DEBUG] _handleHttpRequest: START');
     const { method, url } = req;
     if (!method || !url) {
       throw new BadRequest("Invalid request: missing method or URL");
@@ -1035,11 +1029,9 @@ export class ScorpionApp<
     const reqPath = parsedUrl.pathname;
     const queryParams = this._parseQueryParams(parsedUrl);
 
-    console.log(`[DEBUG] _handleHttpRequest: LOOKING FOR - ${method} ${reqPath}`);
     const routeMatch = findRoute(this.router, method, reqPath);
 
     if (!routeMatch) {
-      console.log(`[DEBUG] _handleHttpRequest: NO ROUTE MATCH for - ${method} ${reqPath}`);
       throw new NotFound(`Cannot ${method} ${reqPath}`);
     }
 

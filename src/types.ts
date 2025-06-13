@@ -83,7 +83,7 @@ export interface IScorpionApp<AppServices extends Record<string, Service<any>> =
   _isScorpionAppBrand: never; // Ensures nominal typing if structural typing becomes an issue
 
   // Configuration methods
-  get<T = any>(path: string): T;
+  get<T = any>(path: string): T | undefined;
   set<T = any>(path: string, value: T): this;
 
   // Service registration

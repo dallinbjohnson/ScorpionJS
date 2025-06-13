@@ -124,13 +124,10 @@ describe('REST Transport Layer', () => {
   });
 
   const listen = async () => {
-    console.log('[TEST.listen] Attempting to start server...');
     const s = await app.listen(0, 'localhost'); // Use port 0 for a random available port
-    console.log(`[TEST.listen] app.listen returned: ${s ? 'server instance' : 'undefined'}`);
     if (s) {
       server = s;
       const address = server.address();
-      console.log(`[TEST.listen] Server address: ${JSON.stringify(address)}`);
       if (typeof address === 'string' || !address) {
         throw new Error('Invalid server address');
       }
@@ -221,7 +218,6 @@ describe('REST Transport Layer', () => {
   });
 
   describe('Body Parsing', () => {
-  console.log('[TEST.describe] Entering Body Parsing suite');
     // A simple service for testing
     class BodyParsingTestService implements Service {
       async find() {
@@ -244,26 +240,20 @@ describe('REST Transport Layer', () => {
       }
     }
 
-    it('should find a resource (DEBUGGING 404s in Body Parsing suite)', async () => {
-      console.log('[TEST.BodyParsing.find] Test starting. Registering service...');
+    it('should find a resource', async () => {
       app.use('body-parsing-test', new BodyParsingTestService());
-      console.log('[TEST.BodyParsing.find] Service registered. Calling listen()...');
       try {
         await listen();
-        console.log('[TEST.BodyParsing.find] listen() call completed.');
       } catch (error) {
         console.error('[TEST.BodyParsing.find] ERROR during listen():', error);
         throw error; // Re-throw to ensure test still fails if listen() is the issue
       }
-      console.log(`[TEST.BodyParsing.find] Port after listen: ${port}`);
 
       const { res, body } = await request({
         port,
         path: '/body-parsing-test',
         method: 'GET',
       });
-      console.log(`[TEST.BodyParsing.find] Requesting: GET /body-parsing-test on port ${port}`);
-      console.log(`[DEBUG Body Parsing GET /body-parsing-test] Status: ${res.statusCode}, Body: ${body.substring(0, 100)}`);
       expect(res.statusCode).to.equal(200);
       const responseData = JSON.parse(body);
       expect(responseData.message).to.equal('find successful');
@@ -336,7 +326,6 @@ describe('REST Transport Layer', () => {
   });
 
   describe('Compression', () => {
-  console.log('[TEST.describe] Entering Compression suite');
     // A simple service for testing
     class CompressionTestService implements Service {
       async find() {
