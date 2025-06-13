@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { ScorpionApp } from '../../src/app.js'; // Adjust path as necessary
-import { Service, HookContext, Params, NextFunction } from '../../src/types.js'; // Adjust path as necessary
+import { IScorpionApp, Service, HookContext, Params, NextFunction } from '../../src/types.js'; // Adjust path as necessary
 
 describe('ScorpionJS Hook Execution Order', () => {
   let app: ScorpionApp;
@@ -49,7 +49,7 @@ describe('ScorpionJS Hook Execution Order', () => {
     app.use('test-service', testService);
     app.service('test-service').hooks({
         before: {
-          find: async (context: HookContext<ScorpionApp, TestService>) => {
+          find: async (context: HookContext<IScorpionApp<any>, Service<IScorpionApp<any>>>) => {
             executionOrder.push('serviceBefore');
           }
         }
@@ -106,12 +106,12 @@ describe('ScorpionJS Hook Execution Order', () => {
     app.use('test-service-after', testService);
     app.service('test-service-after').hooks({
         before: {
-          find: async (context: HookContext<ScorpionApp, TestService>) => {
+          find: async (context: HookContext<IScorpionApp<any>, Service<IScorpionApp<any>>>) => {
             executionOrder.push('serviceBefore');
           }
         },
         after: {
-          find: async (context: HookContext<ScorpionApp, TestService>) => {
+          find: async (context: HookContext<IScorpionApp<any>, Service<IScorpionApp<any>>>) => {
             executionOrder.push('serviceAfter');
           }
         }
@@ -179,7 +179,7 @@ describe('ScorpionJS Hook Execution Order', () => {
     app.use('test-service-around', testService);
     app.service('test-service-around').hooks({
         around: {
-          find: async (context: HookContext<ScorpionApp, TestService>, next: NextFunction<ScorpionApp, TestService>) => {
+          find: async (context: HookContext<IScorpionApp<any>, Service<IScorpionApp<any>>>, next: NextFunction<IScorpionApp<any>, Service<IScorpionApp<any>>>) => {
             executionOrder.push('serviceAroundBefore');
             // Pass the current context to next(), or modify it before passing if needed.
             // The result of next() is the context after downstream hooks/method have run.
@@ -251,17 +251,17 @@ describe('ScorpionJS Hook Execution Order', () => {
     app.use('test-service-error', testService);
     app.service('test-service-error').hooks({
         before: {
-          find: async (context: HookContext<ScorpionApp, TestService>) => {
+          find: async (context: HookContext<IScorpionApp<any>, Service<IScorpionApp<any>>>) => {
             executionOrder.push('serviceBefore');
           }
         },
         after: {
-          find: async (context: HookContext<ScorpionApp, TestService>) => {
+          find: async (context: HookContext<IScorpionApp<any>, Service<IScorpionApp<any>>>) => {
             executionOrder.push('serviceAfter'); // Should not run
           }
         },
         error: {
-          find: async (context: HookContext<ScorpionApp, TestService>) => {
+          find: async (context: HookContext<IScorpionApp<any>, Service<IScorpionApp<any>>>) => {
             executionOrder.push('serviceError');
             expect(context.error).to.equal(testError);
             // Modify the error or result for the client

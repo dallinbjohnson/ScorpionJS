@@ -53,7 +53,13 @@ describe('Configuration System', () => {
     expect(app.get('env')).to.equal(process.env.NODE_ENV || 'development');
     expect(app.get('server.port')).to.equal(3030);
     expect(app.get('server.host')).to.equal('localhost');
-    expect(app.get('server.cors')).to.equal(true);
+    expect(app.get('server.cors')).to.deep.equal({
+      origin: "*",
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+      credentials: true,
+      optionsSuccessStatus: 204
+    });
   });
 
   it('should load configuration from a file', () => {
@@ -68,7 +74,13 @@ describe('Configuration System', () => {
     
     expect(app.get('server.port')).to.equal(8080);
     expect(app.get('server.host')).to.equal('0.0.0.0');
-    expect(app.get('server.cors')).to.equal(true); // Default value still applies
+    expect(app.get('server.cors')).to.deep.equal({
+      origin: "*",
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+      credentials: true,
+      optionsSuccessStatus: 204
+    }); // Default value still applies
   });
 
   it('should load environment-specific configuration', () => {

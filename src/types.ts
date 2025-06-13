@@ -1,9 +1,60 @@
 // src/types.ts
+import * as http from 'http';
 import { ScorpionError } from './errors.js';
 
 /**
  * Configuration options for creating a ScorpionJS application
  */
+export interface CorsOptions {
+  origin?: string | string[] | boolean | RegExp | ((origin: string, callback: (err: Error | null, allow?: boolean) => void) => void);
+  methods?: string | string[];
+  allowedHeaders?: string | string[];
+  exposedHeaders?: string | string[];
+  credentials?: boolean;
+  maxAge?: number;
+  preflightContinue?: boolean;
+  optionsSuccessStatus?: number;
+}
+
+export interface BodyParserJsonOptions {
+  limit?: string | number; // e.g., '100kb', '1mb'
+  strict?: boolean;
+  reviver?: (key: string, value: any) => any;
+  type?: string | string[] | ((req: any) => boolean);
+}
+
+export interface BodyParserUrlencodedOptions {
+  extended?: boolean;
+  limit?: string | number;
+  parameterLimit?: number;
+  type?: string | string[] | ((req: any) => boolean);
+}
+
+export interface BodyParserTextOptions {
+  limit?: string | number;
+  defaultCharset?: string;
+  type?: string | string[] | ((req: any) => boolean);
+}
+
+export interface BodyParserRawOptions {
+  limit?: string | number;
+  type?: string | string[] | ((req: any) => boolean);
+}
+
+export interface BodyParserOptions {
+  json?: boolean | BodyParserJsonOptions;
+  urlencoded?: boolean | BodyParserUrlencodedOptions;
+  text?: boolean | BodyParserTextOptions;
+  raw?: boolean | BodyParserRawOptions;
+}
+
+export interface CompressionOptions {
+  threshold?: string | number; // e.g., '1kb' or 1024 bytes
+  level?: number; // Compression level (0-9 for gzip/deflate)
+  filter?: (req: any, res: any) => boolean; // Function to decide if response should be compressed
+  // Add other options from 'compression' library if needed, e.g., memLevel, strategy
+}
+
 export interface ScorpionConfig {
   // Environment settings
   env?: string;
@@ -11,8 +62,9 @@ export interface ScorpionConfig {
   server?: {
     port?: number;
     host?: string;
-    cors?: boolean | Record<string, any>;
-    bodyParser?: boolean | Record<string, any>;
+    cors?: boolean | CorsOptions;
+    bodyParser?: boolean | BodyParserOptions;
+    compression?: boolean | CompressionOptions;
   };
   // Authentication configuration
   auth?: Record<string, any>;
@@ -29,10 +81,29 @@ export interface ScorpionConfig {
 export interface IScorpionApp<AppServices extends Record<string, Service<any>> = Record<string, any>> {
   services: AppServices;
   _isScorpionAppBrand: never; // Ensures nominal typing if structural typing becomes an issue
-  
+
   // Configuration methods
   get<T = any>(path: string): T;
   set<T = any>(path: string, value: T): this;
+
+  // Service registration
+  use<S extends Service<any>>(path: string, service: S, options?: ServiceOptions): this;
+  service(path: string): RegisteredService<any, any, any>;
+
+  // Server methods
+  listen(port?: number, hostname?: string, listeningListener?: () => void): Promise<http.Server | undefined>;
+
+  // Hook registration
+  hooks(config: HooksApiConfig<any, any>): this;
+  hooks(pathPattern: string, config: HooksApiConfig<any, any>): this;
+
+  // Service unregistration
+  unuse(path: string): Service<any> | undefined;
+
+  // Direct service call execution for testing/internal use
+  executeServiceCall<Svc extends Service<any>>(
+    options: any // Using 'any' to avoid circular dependency on ExecuteServiceCallOptions
+  ): Promise<any>;
 }
 
 
@@ -66,8 +137,8 @@ export interface ServiceMethods<A extends IScorpionApp<any> = IScorpionApp<any>,
  * All standard methods are optional to allow for more focused services.
  */
 export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> {
-  app?: A; // Services often have a reference to the app
-  setup?(app: A, path: string): void; // Optional setup method
+  readonly app?: A; // Services often have a reference to the app
+  setup?(path: string): void; // Optional setup method
   teardown?(): void; // Optional teardown method for cleanup during unregistration
   
   // Event methods
@@ -76,7 +147,7 @@ export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = an
   off?(event: string, listener: (...args: any[]) => void): this;
   
   // Hook configuration method for registering service-specific hooks
-  hooks?(config: HooksApiConfig<any, any>): this;
+  hooks?(config: HooksApiConfig<IScorpionApp<any>, Service<IScorpionApp<any>>>): this;
   
   // Standard methods - all optional
   find?(params?: Params): Promise<T[] | any>;
@@ -97,7 +168,7 @@ export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = an
  */
 export interface RegisteredService<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> extends Service<A, T, D> {
   // These methods are guaranteed to exist after service registration
-  hooks(config: HooksApiConfig<any, any>): this;
+  hooks(config: HooksApiConfig<IScorpionApp<any>, Service<IScorpionApp<any>>>): this;
   emit(event: string, data: any, context?: any): this;
   on(event: string, listener: (...args: any[]) => void): this;
   off(event: string, listener: (...args: any[]) => void): this;
@@ -171,7 +242,7 @@ export interface HooksApiConfig<
 // --- End Hook Configuration Types ---
 
 export interface HookContext<A extends IScorpionApp<any> = IScorpionApp<any>, S extends Service<A> | undefined = undefined> {
-  app: A;
+  app: IScorpionApp<any>; // The app instance, typed broadly for covariance in HookContext
   service?: RegisteredService<A, any, any>; // The proxied, registered service instance
   _rawService?: S; // The raw, un-proxied service instance
   path: string; // Path of the service being called

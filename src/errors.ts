@@ -34,3 +34,17 @@ export class NotAuthenticated extends ScorpionError {
     this.name = 'NotAuthenticated';
   }
 }
+
+export class PayloadTooLarge extends ScorpionError {
+  constructor(message = 'Payload Too Large', data?: any) {
+    super(message, 413, data);
+    this.name = 'PayloadTooLarge';
+  }
+}
+
+export class UnsupportedMediaType extends ScorpionError {
+  constructor(message = 'Unsupported Media Type', data?: any) {
+    super(message, 415, data);
+    this.name = 'UnsupportedMediaType';
+  }
+}

@@ -1,7 +1,7 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import { ScorpionApp } from '../src/app.js';
-import { Service, HookContext } from '../src/types.js';
+import { HookContext, IScorpionApp, Service } from '../src/types.js';
 
 describe('Minimal Hooks Test', () => {
   it('should correctly add hooks to a service', () => {
@@ -22,7 +22,7 @@ describe('Minimal Hooks Test', () => {
     // Add hooks to the service
     service.hooks({
       before: {
-        all: [(context: HookContext) => {
+        all: [(context: HookContext<IScorpionApp<any>, Service<IScorpionApp<any>>>) => {
           context.data = { modified: true };
           return context;
         }]

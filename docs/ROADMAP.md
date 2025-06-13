@@ -63,9 +63,9 @@ A developer using ScorpionJS would expect:
 - [ ] **Phase 2: Transports, Logging & Advanced Hooks**
 
     - [ ] **8. REST Transport Implementation:**
-        *   Integrate the HTTP runtime adapter.
+        *   [x] Integrate the HTTP runtime adapter.
         *   [x] Map standard and custom service methods to RESTful routes.
-        *   Implement request processing (body parsing, query params) and response handling.
+        *   [x] Implement request processing (body parsing, query params) and response handling.
         *   [x] Integrate schema validation hooks for request data/query.
         *   Add REST transport configuration (port, host, CORS, body parser options, compression).
         *   [x] *Ensure transport can dynamically add/remove routes when services are registered/unregistered.*
