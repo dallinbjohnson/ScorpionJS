@@ -67,7 +67,7 @@ A developer using ScorpionJS would expect:
         *   [x] Map standard and custom service methods to RESTful routes.
         *   [x] Implement request processing (body parsing, query params) and response handling.
         *   [x] Integrate schema validation hooks for request data/query.
-        *   Add REST transport configuration (port, host, CORS, body parser options, compression).
+        *   [x] Add REST transport configuration (port, host, CORS, body parser options, compression).
         *   [x] *Ensure transport can dynamically add/remove routes when services are registered/unregistered.*
         *   *Advanced routing capabilities: support for nested routes, path parameter constraints, route specificity, and conflict resolution strategies.*
 
