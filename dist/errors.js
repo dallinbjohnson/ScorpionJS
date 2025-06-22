@@ -2,6 +2,9 @@
 export class ScorpionError extends Error {
     code;
     data;
+    get statusCode() {
+        return this.code;
+    }
     constructor(message, code, data) {
         super(message);
         this.code = code;
@@ -29,3 +32,28 @@ export class NotAuthenticated extends ScorpionError {
         this.name = 'NotAuthenticated';
     }
 }
+export class PayloadTooLarge extends ScorpionError {
+    constructor(message = 'Payload Too Large', data) {
+        super(message, 413, data);
+        this.name = 'PayloadTooLarge';
+    }
+}
+export class MethodNotAllowed extends ScorpionError {
+    constructor(message = 'Method Not Allowed', data) {
+        super(message, 405, data);
+        this.name = 'MethodNotAllowed';
+    }
+}
+export class InternalServerError extends ScorpionError {
+    constructor(message = 'Internal Server Error', data) {
+        super(message, 500, data);
+        this.name = 'InternalServerError';
+    }
+}
+export class UnsupportedMediaType extends ScorpionError {
+    constructor(message = 'Unsupported Media Type', data) {
+        super(message, 415, data);
+        this.name = 'UnsupportedMediaType';
+    }
+}
+//# sourceMappingURL=errors.js.map

@@ -44,6 +44,7 @@ export class ScorpionApp<
 >
 extends EventEmitter
 implements IScorpionAppInternal<AppServices> {
+  private httpServer?: http.Server;
   _isScorpionAppBrand!: never;
   // A registry for all services, mapping a path to a service instance.
   private _services: Record<string, Service<this>> = {};
@@ -61,7 +62,6 @@ implements IScorpionAppInternal<AppServices> {
   private serviceHooks: Record<string, HookObject<this, Service<this>>[]> = {};
 
   // Event system
-  private eventEmitter: EventEmitter = new EventEmitter();
   private serviceEventListeners: Record<
     string,
     Array<{ event: string; listener: (...args: any[]) => void }>
@@ -74,21 +74,6 @@ implements IScorpionAppInternal<AppServices> {
     super(); // Call EventEmitter constructor
     this._router = createRouter<ScorpionRouteData>();
     this._config = this._loadConfig(config);
-  }
-
-  // Explicitly implement EventEmitter methods to satisfy interfaces
-  public emit(event: string | symbol, ...args: any[]): boolean {
-    return super.emit(event, ...args);
-  }
-
-  public on(event: string | symbol, listener: (...args: any[]) => void): this {
-    super.on(event, listener);
-    return this;
-  }
-
-  public off(event: string | symbol, listener: (...args: any[]) => void): this {
-    super.off(event, listener);
-    return this;
   }
 
   /**
@@ -131,23 +116,99 @@ implements IScorpionAppInternal<AppServices> {
     // Start with default configuration
     const defaultConfig: ScorpionConfig = {
       env: process.env.NODE_ENV || "development",
-      server: {
+      rest: {
+        enabled: true,
         port: 3030,
         host: "localhost",
+        basePath: "/",
         cors: {
-          origin: "*", // Default to allow all origins
+          origin: "*",
           methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-          allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+          allowedHeaders: [
+            "Content-Type",
+            "Authorization",
+            "X-Requested-With",
+          ],
           credentials: true,
-          optionsSuccessStatus: 204 // some legacy browsers (IE11, various SmartTVs) choke on 204
+          optionsSuccessStatus: 204,
         },
         bodyParser: {
-          json: { limit: "1mb" }, // Default JSON body limit
-          urlencoded: { extended: true, limit: "1mb" } // Default URL-encoded body limit
+          json: { limit: "1mb" },
+          urlencoded: { extended: true, limit: "1mb" },
         },
         compression: {
-          threshold: "1kb" // Compress responses larger than 1kb by default
+          threshold: "1kb",
+        },
+      },
+      websocket: {
+        enabled: true,
+        port: 3030, // Default to same port as REST, can be overridden
+        host: "localhost",
+        path: "/scorpion", // Default WebSocket path
+        cors: {
+          origin: "*", // Typically, WebSocket CORS is handled by the HTTP upgrade request
+        },
+        serverOptions: { // Defaults for 'ws' library
+          // perMessageDeflate: {
+          //   zlibDeflateOptions: {
+          //     chunkSize: 1024,
+          //     memLevel: 7,
+          //     level: 3
+          //   },
+          //   zlibInflateOptions: {
+          //     chunkSize: 10 * 1024
+          //   },
+          //   clientNoContextTakeover: true, // Defaults to negotiated value.
+          //   serverNoContextTakeover: true, // Defaults to negotiated value.
+          //   serverMaxWindowBits: 10, // Defaults to negotiated value.
+          //   concurrencyLimit: 10, // Limits zlib concurrency for perf.
+          //   threshold: 1024 // Size (in bytes) below which messages
+          // }
         }
+      },
+      logging: {
+        level: process.env.NODE_ENV === "production" ? "info" : "debug",
+        prettyPrint: process.env.NODE_ENV !== "production",
+        transports: [],
+      },
+      validation: {
+        defaultProvider: "zod", // Assuming Zod might be a primary choice
+        providerOptions: {},
+        strict: true,
+      },
+      faultTolerance: {
+        circuitBreaker: {
+          enabled: false,
+          timeout: 30000, // 30 seconds
+          errorThresholdPercentage: 50,
+          resetTimeout: 30000, // 30 seconds
+        },
+        timeout: {
+          enabled: false,
+          default: 5000, // 5 seconds global timeout for service calls
+        },
+        retries: {
+          enabled: false,
+          defaultAttempts: 3,
+          backoffStrategy: "fixed",
+          defaultDelay: 1000, // 1 second
+        },
+        bulkhead: {
+          enabled: false,
+          maxConcurrent: 10,
+          maxQueue: 10,
+        },
+      },
+      serviceDiscovery: {
+        enabled: false,
+        strategy: "static", // No dynamic discovery by default
+        options: {},
+      },
+      i18n: {
+        defaultLocale: "en",
+        locales: ["en"],
+        directory: "./locales",
+        parserOptions: {},
       },
     };
 
@@ -467,7 +528,7 @@ implements IScorpionAppInternal<AppServices> {
       };
 
       // Emit on the service-specific event
-      this.eventEmitter.emit(fullEvent, data, serviceContext);
+      this.emit(fullEvent, data, serviceContext);
 
       return serviceProxy; // Return serviceProxy instead of service
     };
@@ -475,7 +536,7 @@ implements IScorpionAppInternal<AppServices> {
     // Add on method to the service
     serviceProxy.on = (event: string, listener: (...args: any[]) => void) => {
       const fullEvent = `${path} ${event}`;
-      this.eventEmitter.on(fullEvent, listener);
+      this.on(fullEvent, listener);
 
       // Track this listener for cleanup
       this.serviceEventListeners[path].push({
@@ -489,7 +550,7 @@ implements IScorpionAppInternal<AppServices> {
     // Add off method to the service
     serviceProxy.off = (event: string, listener: (...args: any[]) => void) => {
       const fullEvent = `${path} ${event}`;
-      this.eventEmitter.off(fullEvent, listener);
+      this.off(fullEvent, listener);
 
       // Remove from tracked listeners
       const listeners = this.serviceEventListeners[path];
@@ -812,18 +873,25 @@ implements IScorpionAppInternal<AppServices> {
 
   public async listen(
     port?: number,
-    host?: string,
-    callback?: () => void
+    host?: string
   ): Promise<http.Server | undefined> {
-    return new Promise((resolve, reject) => {
-      const appPort = port !== undefined ? port : (this.get("server.port") as number | undefined) || 3030;
-      const appHost = host !== undefined ? host : (this.get("server.host") as string | undefined) || "localhost";
+    if (this.get("rest.enabled")) {
+      const restPort = port !== undefined ? port : (this.get("rest.port") as number | undefined) || 0;
+      const restHost = host !== undefined ? host : (this.get("rest.host") as string | undefined) || "localhost";
+      const internalApp = this as IScorpionAppInternal<AppServices>;
 
-      // Start the REST server by calling the function from rest.ts
-      return startRestServer(this, appPort, appHost, callback);
-
-      resolve(undefined);
-    });
+      try {
+        this.httpServer = await startRestServer(internalApp, restPort, restHost);
+        return this.httpServer;
+      } catch (error) {
+        console.error("[ScorpionApp] Error during app.listen while starting REST server:", error);
+        this.httpServer = undefined;
+        return undefined; // Propagate that server didn't start
+      }
+    } else {
+      console.warn("[ScorpionApp] REST transport not configured. Server not started.");
+      return undefined;
+    }
   }
 
   /**
@@ -1039,7 +1107,7 @@ implements IScorpionAppInternal<AppServices> {
     if (this.serviceEventListeners[path]) {
       console.log(`Cleaning up event listeners for service '${path}'`);
       for (const { event, listener } of this.serviceEventListeners[path]) {
-        this.eventEmitter.off(event, listener);
+        this.off(event, listener);
       }
       delete this.serviceEventListeners[path];
     }
@@ -1083,7 +1151,7 @@ implements IScorpionAppInternal<AppServices> {
    * @returns The app instance for chaining
    */
   public publish(event: string, data: any, context?: any): this {
-    this.eventEmitter.emit(event, data, context);
+    this.emit(event, data, context);
     return this;
   }
 

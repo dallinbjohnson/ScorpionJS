@@ -2,402 +2,250 @@
 
 ScorpionJS provides a flexible configuration system that allows you to customize the behavior of your application. This document provides detailed API documentation for configuring ScorpionJS applications.
 
-## Basic Configuration
-
-When creating a ScorpionJS application, you can provide configuration options:
-
-```javascript
-import { createApp } from 'scorpionjs';
-
-const app = createApp({
-  // Environment
-  env: 'production',
-  
-  // Server configuration
-  server: {
-    port: 8080,
-    host: '0.0.0.0',
-    cors: {
-      origin: '*',
-      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE'
-    }
-  },
-  
-  // Database configuration
-  database: {
-    client: 'pg',
-    connection: {
-      host: 'localhost',
-      user: 'postgres',
-      password: 'secret',
-      database: 'my_app'
-    }
-  }
-});
-```
-
-## Configuration Options
-
-### Core Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `env` | String | `process.env.NODE_ENV || 'development'` | Environment (development, production, test) |
-
-### Server Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `server.port` | Number | `3030` | Port for the HTTP server |
-| `server.host` | String | `'localhost'` | Host for the HTTP server |
-| `server.cors` | Boolean/Object | `true` | CORS configuration (true for defaults, object for custom settings) |
-
-### Logging Options
-
-```javascript
-const app = createApp({
-  logger: {
-    level: 'info',           // Log level (trace, debug, info, warn, error, fatal)
-    pretty: true,            // Pretty-print logs (colored, formatted)
-    timestamp: true,         // Include timestamps
-    colors: true,            // Use colors in output
-    file: './logs/app.log',  // Log to file
-    redact: ['password'],    // Fields to redact from logs
-    serializers: {           // Custom serializers
-      req: (req) => ({ method: req.method, url: req.url })
-    }
-  }
-});
-```
-
-### Transport Options
-
-```javascript
-const app = createApp({
-  transports: {
-    rest: {
-      enabled: true,
-      port: 3000,
-      host: 'localhost',
-      cors: {
-        origin: '*',
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
-      },
-      bodyParser: {
-        json: { limit: '1mb' },
-        urlencoded: { extended: true }
-      },
-      compression: true
-    },
-    
-    socket: {
-      enabled: true,
-      port: 3000,  // Can share port with REST
-      path: '/socket',
-      pingInterval: 10000,
-      pingTimeout: 5000,
-      maxHttpBufferSize: 1e6
-    }
-  }
-});
-```
-
-### Service Discovery Options
-
-```javascript
-const app = createApp({
-  discovery: {
-    type: 'redis',
-    options: {
-      host: 'localhost',
-      port: 6379,
-      password: 'secret',
-      db: 0,
-      keyPrefix: 'scorpion:'
-    },
-    heartbeatInterval: 5000,
-    heartbeatTimeout: 15000
-  }
-});
-```
-
-### Fault Tolerance Options
-
-```javascript
-const app = createApp({
-  faultTolerance: {
-    circuitBreaker: {
-      enabled: true,
-      threshold: 0.5,         // Error threshold (50%)
-      minRequests: 20,        // Minimum requests before tripping
-      windowTime: 60000,      // Time window in ms (1 minute)
-      halfOpenAfter: 10000    // Time to half-open state in ms
-    },
-    
-    bulkhead: {
-      enabled: true,
-      concurrency: 10,        // Max concurrent executions
-      maxQueueSize: 100       // Max queue size
-    },
-    
-    retry: {
-      enabled: true,
-      retries: 3,             // Number of retries
-      delay: 1000,            // Delay between retries in ms
-      factor: 2,              // Exponential backoff factor
-      maxDelay: 30000         // Maximum delay in ms
-    },
-    
-    timeout: {
-      enabled: true,
-      duration: 5000          // Timeout in ms
-    },
-    
-    fallback: {
-      enabled: true
-      // Fallbacks are defined per service
-    }
-  }
-});
-```
-
-### Authentication Options
-
-```javascript
-const app = createApp({
-  authentication: {
-    secret: 'your-secret-key',
-    jwt: {
-      algorithm: 'HS256',
-      expiresIn: '1d'
-    },
-    strategies: ['jwt', 'local'],
-    entity: 'user',
-    entityId: 'id',
-    service: 'users'
-  }
-});
-```
-
-### Schema Validation Options
-
-```javascript
-const app = createApp({
-  validation: {
-    coerceTypes: true,         // Coerce data types
-    removeAdditional: true,    // Remove additional properties
-    useDefaults: true,         // Apply default values
-    allErrors: true            // Return all errors
-  }
-});
-```
-
-### Cache Options
-
-```javascript
-const app = createApp({
-  cache: {
-    enabled: true,
-    adapter: 'memory',         // 'memory', 'redis', or custom
-    ttl: 60,                   // Time to live in seconds
-    max: 1000,                 // Max items in cache
-    options: {
-      // Adapter-specific options
-      host: 'localhost',
-      port: 6379
-    }
-  }
-});
-```
-
-## Configuration Methods
-
-### Loading Configuration
+## Configuration Loading
 
 ScorpionJS automatically loads configuration from multiple sources with the following precedence (highest to lowest):
 
-1. Configuration object passed to `createApp()` or the constructor
-2. Environment variables with `SCORPION_` prefix
-3. Environment-specific configuration file (`scorpion.{env}.config.json`)
-4. Default configuration file (`scorpion.config.json`)
-5. Default values built into the framework
+1.  **Programmatic Configuration**: Object passed to `createApp()` or the `ScorpionApp` constructor.
+2.  **Environment Variables**: Variables prefixed with `SCORPION_`. For nested properties, use double underscores (e.g., `SCORPION_REST__PORT=8080` maps to `config.rest.port`).
+3.  **Environment-Specific Configuration File**: `scorpion.{env}.config.json` (e.g., `scorpion.production.config.json`).
+4.  **Default Configuration File**: `scorpion.config.json`.
+5.  **Internal Default Values**: Predefined defaults within the framework.
 
-```javascript
-import { createApp } from 'scorpionjs';
+## Core Configuration (`ScorpionConfig`)
 
-// Configuration will be automatically loaded from all sources
-const app = createApp({
-  // These values will override any from other sources
-  server: {
-    port: 8080
-  }
-});
-```
+The main configuration object can have the following top-level properties:
 
-### Configuration Files
-
-ScorpionJS looks for configuration files in the current working directory:
-
-**JSON Format**
-
-`scorpion.config.json`:
-```json
-{
-  "env": "development",
-  "server": {
-    "port": 3030,
-    "host": "localhost",
-    "cors": true
-  },
-  "database": {
-    "client": "sqlite3",
-    "connection": {
-      "filename": "./dev.sqlite3"
-    }
-  }
+```typescript
+interface ScorpionConfig {
+  env?: string;
+  rest?: RestTransportConfig;
+  websocket?: WebSocketTransportConfig;
+  logging?: LoggingConfig;
+  validation?: SchemaValidationConfig;
+  faultTolerance?: FaultToleranceConfig;
+  serviceDiscovery?: ServiceDiscoveryConfig;
+  i18n?: I18nConfig;
 }
 ```
 
-### Environment-specific Configuration
+### `env`
 
-ScorpionJS automatically loads environment-specific configuration files. For example, if `NODE_ENV=production`, it will look for `scorpion.production.config.json`:
+| Option | Type   | Default                             | Description                                  |
+| :----- | :----- | :---------------------------------- | :------------------------------------------- |
+| `env`  | string | `process.env.NODE_ENV || 'development'` | Application environment (e.g., 'development', 'production', 'test'). |
+
+---
+
+### REST Transport Configuration (`rest`)
+
+Controls the REST API transport layer.
+
+| Option         | Type             | Default                                                 | Description                                                                                                                               |
+| :------------- | :--------------- | :------------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`      | boolean          | `true`                                                  | Enables or disables the REST transport.                                                                                                   |
+| `port`         | number           | `3030`                                                  | Port for the HTTP server.                                                                                                                 |
+| `host`         | string           | `'localhost'`                                           | Host for the HTTP server.                                                                                                                 |
+| `basePath`     | string           | `/`                                                     | Base path for all REST routes.                                                                                                            |
+| `cors`         | CorsOptions      | `{ origin: '*', methods: [...], allowedHeaders: [...] }` | CORS (Cross-Origin Resource Sharing) configuration. See `CorsOptions` below.                                                              |
+| `bodyParser`   | BodyParserConfig | `{ json: { limit: '1mb' }, urlencoded: { ... } }`       | Configuration for request body parsing. See `BodyParserConfig` below.                                                                     |
+| `compression`  | CompressionConfig| `{ threshold: '1kb' }`                                  | Configuration for response compression. See `CompressionConfig` below.                                                                    |
+
+#### `CorsOptions`
+
+| Option               | Type                        | Default                                                     | Description                                                                                             |
+| :------------------- | :-------------------------- | :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------------ |
+| `origin`             | string \| boolean \| string[] | `'*'`                                                       | Configures the `Access-Control-Allow-Origin` CORS header.                                               |
+| `methods`            | string \| string[]          | `['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']`      | Configures the `Access-Control-Allow-Methods` CORS header.                                              |
+| `allowedHeaders`     | string \| string[]          | `['Content-Type', 'Authorization', 'X-Requested-With']`     | Configures the `Access-Control-Allow-Headers` CORS header.                                              |
+| `exposedHeaders`     | string \| string[]          | `[]`                                                        | Configures the `Access-Control-Expose-Headers` CORS header.                                             |
+| `credentials`        | boolean                     | `true`                                                      | Configures the `Access-Control-Allow-Credentials` CORS header.                                          |
+| `maxAge`             | number                      |                                                             | Configures the `Access-Control-Max-Age` CORS header.                                                    |
+| `preflightContinue`  | boolean                     | `false`                                                     | Pass the CORS preflight response to the next handler.                                                   |
+| `optionsSuccessStatus`| number                     | `204`                                                       | Provides a status code to use for successful `OPTIONS` requests, since some legacy browsers choke on `204`. |
+
+#### `BodyParserConfig`
+
+| Option       | Type   | Default                        | Description                                      |
+| :----------- | :----- | :----------------------------- | :----------------------------------------------- |
+| `json`       | object | `{ limit: '1mb' }`             | Options for `express.json()` middleware.         |
+| `urlencoded` | object | `{ extended: true, limit: '1mb' }` | Options for `express.urlencoded()` middleware. |
+
+#### `CompressionConfig`
+
+| Option      | Type             | Default        | Description                                                        |
+| :---------- | :--------------- | :------------- | :----------------------------------------------------------------- |
+| `threshold` | number \| string | `'1kb'`        | Minimum response size in bytes to apply compression (e.g., `1024` or `'1kb'`). | 
+| `options`   | object           | `{}`           | Other options for the `compression` middleware.                    |
+
+---
+
+### WebSocket Transport Configuration (`websocket`)
+
+Controls the WebSocket transport layer.
+
+| Option          | Type                | Default                               | Description                                                                                                                                                              |
+| :-------------- | :------------------ | :------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`       | boolean             | `true`                                | Enables or disables the WebSocket transport.                                                                                                                             |
+| `port`          | number              | `3030`                                | Port for the WebSocket server. Can be the same as REST if sharing the HTTP server.                                                                                       |
+| `host`          | string              | `'localhost'`                         | Host for the WebSocket server.                                                                                                                                           |
+| `path`          | string              | `'/scorpion'`                         | Path for WebSocket connections (e.g., `/ws`, `/socket.io`).                                                                                                              |
+| `cors`          | WsCorsOptions       | `{ origin: '*' }`                     | CORS configuration for the HTTP upgrade request. See `WsCorsOptions` below.                                                                                              | 
+| `serverOptions` | object              | `{}`                                  | Options passed directly to the underlying WebSocket server library (e.g., `ws`). Example: `{ perMessageDeflate: false }`.                                                   |
+
+#### `WsCorsOptions`
+
+| Option   | Type    | Default | Description                                                                 |
+| :------- | :------ | :------ | :-------------------------------------------------------------------------- |
+| `origin` | string  | `'*'`   | Specifies the origin allowed for WebSocket upgrade requests.                |
+| `handlePreflightRequest` | `(req, res) => void` | (internal handler) | Optional custom handler for preflight requests if needed. |
+
+---
+
+### Logging Configuration (`logging`)
+
+Configures application-wide logging.
+
+| Option        | Type              | Default                                              | Description                                                                                                                                 |
+| :------------ | :---------------- | :--------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| `level`       | string            | `'info'` (production) or `'debug'` (development)     | Minimum log level (e.g., 'trace', 'debug', 'info', 'warn', 'error', 'fatal').                                                               |
+| `prettyPrint` | boolean \| object | `true` (development) or `false` (production)         | Enables or disables human-readable, colorized log output. Can be an object for `pino-pretty` options.                                       |
+| `transports`  | any[]             | `[]`                                                 | Array of custom pino transports (e.g., for sending logs to external services).                                                              |
+| `options`     | object            | `{}`                                                 | Additional options passed directly to the Pino logger constructor.                                                                          |
+
+---
+
+### Schema Validation Configuration (`validation`)
+
+Configures data validation throughout the application.
+
+| Option            | Type   | Default     | Description                                                                                              |
+| :---------------- | :----- | :---------- | :------------------------------------------------------------------------------------------------------- |
+| `defaultProvider` | string | `'zod'`     | Default schema validation library to use (e.g., 'zod', 'ajv', 'joi'). Requires corresponding plugin/adapter. |
+| `providerOptions` | object | `{}`        | Options specific to the chosen validation provider.                                                      |
+| `strict`          | boolean| `true`      | If `true`, enables strict validation modes (e.g., disallow unknown properties) where supported.          |
+
+---
+
+### Fault Tolerance Configuration (`faultTolerance`)
+
+Configures resilience patterns for service calls. All features are disabled by default.
+
+#### Circuit Breaker (`faultTolerance.circuitBreaker`)
+
+| Option                   | Type    | Default | Description                                                                 |
+| :----------------------- | :------ | :------ | :-------------------------------------------------------------------------- |
+| `enabled`                | boolean | `false` | Enables the circuit breaker pattern.                                        |
+| `timeout`                | number  | `30000` | Milliseconds before a request attempt is considered timed out.                |
+| `errorThresholdPercentage`| number | `50`    | Percentage of failed requests to trip the circuit.                          |
+| `resetTimeout`           | number  | `30000` | Milliseconds after which the circuit attempts to reset (half-open state).   |
+
+#### Timeout (`faultTolerance.timeout`)
+
+| Option        | Type    | Default | Description                                                              |
+| :------------ | :------ | :------ | :----------------------------------------------------------------------- |
+| `enabled`     | boolean | `false` | Enables global timeouts for service calls.                               |
+| `default`     | number  | `5000`  | Default timeout in milliseconds for service calls if not overridden.     |
+
+#### Retries (`faultTolerance.retries`)
+
+| Option            | Type    | Default   | Description                                                                      |
+| :---------------- | :------ | :-------- | :------------------------------------------------------------------------------- |
+| `enabled`         | boolean | `false`   | Enables automatic retries for failed service calls.                              |
+| `defaultAttempts` | number  | `3`       | Default number of retry attempts.                                                |
+| `backoffStrategy` | string  | `'fixed'` | Strategy for delay between retries ('fixed', 'exponential').                     |
+| `defaultDelay`    | number  | `1000`    | Default delay in milliseconds for 'fixed' strategy, or initial for 'exponential'. |
+
+#### Bulkhead (`faultTolerance.bulkhead`)
+
+| Option          | Type    | Default | Description                                                              |
+| :-------------- | :------ | :------ | :----------------------------------------------------------------------- |
+| `enabled`       | boolean | `false` | Enables the bulkhead pattern to limit concurrent calls.                  |
+| `maxConcurrent` | number  | `10`    | Maximum number of concurrent executions.                                 |
+| `maxQueue`      | number  | `10`    | Maximum number of requests to queue if concurrency limit is reached.     |
+
+---
+
+### Service Discovery Configuration (`serviceDiscovery`)
+
+Configures how services discover each other in a distributed environment.
+
+| Option    | Type   | Default    | Description                                                                                              |
+| :-------- | :----- | :--------- | :------------------------------------------------------------------------------------------------------- |
+| `enabled` | boolean| `false`    | Enables service discovery.                                                                               |
+| `strategy`| string | `'static'` | Discovery strategy (e.g., 'static', 'redis', 'consul'). Requires corresponding plugin/adapter.         |
+| `options` | object | `{}`       | Options specific to the chosen discovery strategy (e.g., connection details for Redis).                  |
+
+---
+
+### Internationalization (i18n) Configuration (`i18n`)
+
+Configures internationalization and localization features.
+
+| Option          | Type     | Default       | Description                                                                                             |
+| :-------------- | :------- | :------------ | :------------------------------------------------------------------------------------------------------ |
+| `defaultLocale` | string   | `'en'`        | The default language/locale for the application.                                                        |
+| `locales`       | string[] | `['en']`      | An array of supported locales.                                                                          |
+| `directory`     | string   | `'./locales'` | Path to the directory containing locale files (e.g., JSON, YAML).                                       |
+| `parserOptions` | object   | `{}`          | Options for the locale file parser (e.g., if using a specific library like `i18next-fs-backend`).       |
+
+## Example: `scorpion.config.json`
 
 ```json
 {
-  "server": {
-    "port": 80,
-    "host": "0.0.0.0"
-  },
-  "database": {
-    "client": "pg",
-    "connection": {
-      "host": "db.example.com",
-      "user": "app",
-      "password": "${DB_PASSWORD}",
-      "database": "production_db"
-    }
-  }
-}
-```
-
-### Environment Variables
-
-ScorpionJS automatically loads configuration from environment variables with the `SCORPION_` prefix. Environment variables are converted to nested configuration properties using underscores as separators:
-
-```bash
-# These environment variables:
-SCORPION_SERVER_PORT=8080
-SCORPION_SERVER_HOST=0.0.0.0
-SCORPION_DATABASE_CLIENT=pg
-SCORPION_DATABASE_CONNECTION_HOST=db.example.com
-
-# Will be converted to this configuration:
-{
-  "server": {
+  "env": "production",
+  "rest": {
     "port": 8080,
-    "host": "0.0.0.0"
-  },
-  "database": {
-    "client": "pg",
-    "connection": {
-      "host": "db.example.com"
+    "host": "0.0.0.0",
+    "cors": {
+      "origin": "https://myapp.com"
     }
+  },
+  "websocket": {
+    "port": 8080,
+    "path": "/realtime"
+  },
+  "logging": {
+    "level": "warn",
+    "prettyPrint": false
+  },
+  "validation": {
+    "strict": false
+  },
+  "faultTolerance": {
+    "timeout": {
+      "enabled": true,
+      "default": 10000
+    }
+  },
+  "i18n": {
+    "defaultLocale": "en-US",
+    "locales": ["en-US", "es-ES"],
+    "directory": "./config/locales"
   }
 }
 ```
 
-Values are automatically parsed as JSON if possible, so you can use `SCORPION_SERVER_CORS=true` or `SCORPION_SERVER_PORT=8080` and they will be converted to boolean and number types respectively.
+## Accessing Configuration
 
-## Runtime Configuration
-
-### Getting Configuration
+You can access configuration values within your application using `app.get(path)`:
 
 ```javascript
-// Get a specific configuration value using dot notation
-const port = app.get('server.port');
-const dbClient = app.get('database.client');
+// Get the REST port
+const restPort = app.get('rest.port'); // Accesses config.rest.port
 
-// Get a nested configuration object
-const serverConfig = app.get('server');
-console.log(serverConfig.port); // 3030
+// Get the default i18n locale
+const defaultLocale = app.get('i18n.defaultLocale');
 
-// Get a value with a default if not found
-const timeout = app.get('server.timeout') || 5000;
-```
+// Get a nested value
+const jsonBodyLimit = app.get('rest.bodyParser.json.limit');
 
-### Setting Configuration
-
-```javascript
-// Set a configuration value using dot notation
-app.set('server.port', 8080);
-
-// Set a nested configuration object
-app.set('database', {
-  client: 'mysql',
-  connection: {
-    host: 'localhost',
-    user: 'root',
-    password: 'secret',
-    database: 'my_app'
-  }
-});
-
-// Chain multiple set operations
-app.set('server.port', 8080)
-   .set('server.host', '0.0.0.0');
-```
-
-### Using Configuration in Services
-
-Services can access the application configuration through the `app` reference:
-
-```javascript
-class MyService {
-  setup(app) {
-    this.app = app;
-    this.dbClient = app.get('database.client');
-    this.serverPort = app.get('server.port');
-  }
-  
-  async find(params) {
-    // Use configuration values
-    const pageSize = this.app.get('pagination.defaultSize') || 10;
-    // ...
-  }
+if (app.get('faultTolerance.circuitBreaker.enabled')) {
+  // Circuit breaker logic
 }
 ```
 
-## Configuration in Plugins
-
-Plugins can access and modify the application configuration:
-
-```javascript
-// my-plugin.js
-export default function myPlugin(options = {}) {
-  return function(app) {
-    // Get existing configuration
-    const serverPort = app.get('server.port');
-    
-    // Set new configuration values
-    app.set('myPlugin', {
-      enabled: options.enabled !== false,
-      timeout: options.timeout || 5000
-    });
-    
-    // Use configuration values
-    console.log(`Plugin initialized with port ${serverPort}`);
-  };
-}
-
-// Using the plugin
-import { createApp } from 'scorpionjs';
-import myPlugin from './my-plugin';
-
-const app = createApp();
-app.configure(myPlugin({ timeout: 10000 }));
-```
-
-## Configuration Best Practices
+The `app.set(path, value)` method can be used to modify configuration at runtime, though this is generally less common for initial setup.
 
 ### Sensitive Information
 

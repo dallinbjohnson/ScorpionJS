@@ -1,34 +1,55 @@
 // src/app.ts
-import * as http from "http";
-import * as fs from "fs";
-import * as path from "path";
-import { URL } from "url";
+import * as fs from 'fs';
+import * as path from 'path';
+import { NotFound } from './errors.js';
+import { startRestServer } from './rest.js';
 import { EventEmitter } from "events";
-import { runHooks } from "./hooks.js";
-import { ScorpionError, NotFound, BadRequest } from "./errors.js";
-import { createRouter, addRoute, findRoute, removeRoute } from "rou3";
+import { runHooks } from './hooks.js';
+import { createRouter, addRoute, removeRoute } from "rou3";
 import { registerSchemas } from "./schema.js";
-export class ScorpionApp {
+export class ScorpionApp extends EventEmitter {
+    httpServer;
     _isScorpionAppBrand;
     // A registry for all services, mapping a path to a service instance.
     _services = {};
     _rawServices = {};
-    _serviceOptions = {};
     get services() {
         return this._services;
     }
-    router;
+    _router;
     globalHooks = [];
     interceptorGlobalHooks = []; // For hooks that run between global/service-specific layers
     serviceHooks = {};
     // Event system
-    eventEmitter = new EventEmitter();
     serviceEventListeners = {};
     // Configuration system
     _config = {};
     constructor(config = {}) {
-        this.router = createRouter();
+        super(); // Call EventEmitter constructor
+        this._router = createRouter();
         this._config = this._loadConfig(config);
+    }
+    /**
+     * Returns the internal router instance.
+     * This is used by transports to register routes.
+     */
+    getRouter() {
+        return this._router;
+    }
+    _getAllMethodNames(obj) {
+        const methods = new Set();
+        let current = obj;
+        do {
+            Object.getOwnPropertyNames(current).forEach(name => {
+                // Check if the property is a function and not an ES6 class constructor
+                if (typeof current[name] === 'function' && name !== 'constructor') {
+                    methods.add(name);
+                }
+            });
+            current = Object.getPrototypeOf(current);
+            // Stop when we reach the Object prototype or null (for objects created with Object.create(null))
+        } while (current && current !== Object.prototype && current !== null);
+        return Array.from(methods);
     }
     /**
      * Loads configuration from various sources and merges them with the provided config.
@@ -45,10 +66,99 @@ export class ScorpionApp {
         // Start with default configuration
         const defaultConfig = {
             env: process.env.NODE_ENV || "development",
-            server: {
+            rest: {
+                enabled: true,
                 port: 3030,
                 host: "localhost",
-                cors: true,
+                basePath: "/",
+                cors: {
+                    origin: "*",
+                    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+                    allowedHeaders: [
+                        "Content-Type",
+                        "Authorization",
+                        "X-Requested-With",
+                    ],
+                    credentials: true,
+                    optionsSuccessStatus: 204,
+                },
+                bodyParser: {
+                    json: { limit: "1mb" },
+                    urlencoded: { extended: true, limit: "1mb" },
+                },
+                compression: {
+                    threshold: "1kb",
+                },
+            },
+            websocket: {
+                enabled: true,
+                port: 3030, // Default to same port as REST, can be overridden
+                host: "localhost",
+                path: "/scorpion", // Default WebSocket path
+                cors: {
+                    origin: "*", // Typically, WebSocket CORS is handled by the HTTP upgrade request
+                },
+                serverOptions: { // Defaults for 'ws' library
+                // perMessageDeflate: {
+                //   zlibDeflateOptions: {
+                //     chunkSize: 1024,
+                //     memLevel: 7,
+                //     level: 3
+                //   },
+                //   zlibInflateOptions: {
+                //     chunkSize: 10 * 1024
+                //   },
+                //   clientNoContextTakeover: true, // Defaults to negotiated value.
+                //   serverNoContextTakeover: true, // Defaults to negotiated value.
+                //   serverMaxWindowBits: 10, // Defaults to negotiated value.
+                //   concurrencyLimit: 10, // Limits zlib concurrency for perf.
+                //   threshold: 1024 // Size (in bytes) below which messages
+                // }
+                }
+            },
+            logging: {
+                level: process.env.NODE_ENV === "production" ? "info" : "debug",
+                prettyPrint: process.env.NODE_ENV !== "production",
+                transports: [],
+            },
+            validation: {
+                defaultProvider: "zod", // Assuming Zod might be a primary choice
+                providerOptions: {},
+                strict: true,
+            },
+            faultTolerance: {
+                circuitBreaker: {
+                    enabled: false,
+                    timeout: 30000, // 30 seconds
+                    errorThresholdPercentage: 50,
+                    resetTimeout: 30000, // 30 seconds
+                },
+                timeout: {
+                    enabled: false,
+                    default: 5000, // 5 seconds global timeout for service calls
+                },
+                retries: {
+                    enabled: false,
+                    defaultAttempts: 3,
+                    backoffStrategy: "fixed",
+                    defaultDelay: 1000, // 1 second
+                },
+                bulkhead: {
+                    enabled: false,
+                    maxConcurrent: 10,
+                    maxQueue: 10,
+                },
+            },
+            serviceDiscovery: {
+                enabled: false,
+                strategy: "static", // No dynamic discovery by default
+                options: {},
+            },
+            i18n: {
+                defaultLocale: "en",
+                locales: ["en"],
+                directory: "./locales",
+                parserOptions: {},
             },
         };
         // Try to load configuration from file
@@ -177,16 +287,6 @@ export class ScorpionApp {
         const lastPart = parts[parts.length - 1];
         current[lastPart] = value;
     }
-    /**
-     * Retrieves a service registered at the given path.
-     * Throws an error if the service doesn't exist.
-     *
-     * The returned service is guaranteed to have hooks, emit, on, and off methods
-     * as they are added during registration via app.use().
-     *
-     * @param path The path of the service to retrieve (e.g., 'messages').
-     * @returns The registered service instance with guaranteed hooks method.
-     */
     service(path) {
         const service = this._services[path];
         if (!service) {
@@ -211,9 +311,6 @@ export class ScorpionApp {
             throw new Error(`Service on path '${path}' is already registered.`);
         }
         this._rawServices[path] = service;
-        if (options) {
-            this._serviceOptions[path] = options;
-        }
         if (!service) {
             throw new Error(`Cannot register undefined service at path '${path}'.`);
         }
@@ -284,6 +381,7 @@ export class ScorpionApp {
                             data,
                             params,
                         });
+                        // TODO: Add any other necessary setup or teardown logic here
                         // Return the result or throw the error
                         if (result.error) {
                             throw result.error;
@@ -295,14 +393,17 @@ export class ScorpionApp {
                 return originalValue;
             },
         });
+        // Attach the registration options to the service proxy itself
+        if (options) {
+            serviceProxy._options = options;
+        }
         // Initialize service event listeners array
         this.serviceEventListeners[path] = [];
-        // Perform service setup (inlined from _setupServiceInstance)
+        // Always attach the app instance to the service
+        serviceProxy.app = this;
+        // Perform service setup if the method exists
         if (typeof serviceProxy.setup === "function") {
-            serviceProxy.setup(this, path);
-        }
-        else {
-            serviceProxy.app = this;
+            serviceProxy.setup(path);
         }
         // Add emit method to the service
         serviceProxy.emit = (event, data, context) => {
@@ -313,13 +414,13 @@ export class ScorpionApp {
                 ...context,
             };
             // Emit on the service-specific event
-            this.eventEmitter.emit(fullEvent, data, serviceContext);
+            this.emit(fullEvent, data, serviceContext);
             return serviceProxy; // Return serviceProxy instead of service
         };
         // Add on method to the service
         serviceProxy.on = (event, listener) => {
             const fullEvent = `${path} ${event}`;
-            this.eventEmitter.on(fullEvent, listener);
+            this.on(fullEvent, listener);
             // Track this listener for cleanup
             this.serviceEventListeners[path].push({
                 event: fullEvent,
@@ -330,7 +431,7 @@ export class ScorpionApp {
         // Add off method to the service
         serviceProxy.off = (event, listener) => {
             const fullEvent = `${path} ${event}`;
-            this.eventEmitter.off(fullEvent, listener);
+            this.off(fullEvent, listener);
             // Remove from tracked listeners
             const listeners = this.serviceEventListeners[path];
             const index = listeners.findIndex((l) => l.event === fullEvent && l.listener === listener);
@@ -348,15 +449,19 @@ export class ScorpionApp {
             this._processHookConfig(config, path, // Exact match for service-specific hooks
             this.serviceHooks[path], `[Service.hooks] service '${path}'` // Context for error messages
             );
-            return serviceProxy; // Return serviceProxy instead of service
-        };
+            return serviceProxy; // Ensure hooks method returns the service proxy for chaining/type compatibility
+        }; // End of serviceProxy.hooks definition
         // Register routes for all service methods (standard and custom)
-        for (const methodName in serviceProxy) {
+        // Use actualService to get all methods, including those from the prototype chain
+        const actualService = service; // Use the original service instance passed to app.use
+        const allMethodNames = this._getAllMethodNames(actualService);
+        for (const methodName of allMethodNames) {
             if (typeof serviceProxy[methodName] === "function" &&
-                !["setup", "emit", "on", "off", "hooks"].includes(methodName)) {
+                !["constructor", "setup", "emit", "on", "off", "hooks"].includes(methodName)) {
                 const methodOptions = options?.methods?.[methodName];
                 let httpMethod;
                 let routePathSegment;
+                // ...
                 // Determine HTTP method
                 if (methodOptions?.httpMethod) {
                     httpMethod = methodOptions.httpMethod;
@@ -404,9 +509,11 @@ export class ScorpionApp {
                 // Construct the full route path using the class method
                 const fullRoutePath = this._buildRoutePath(path, routePathSegment);
                 console.log(`  Adding route: ${httpMethod} ${fullRoutePath} -> ${path}.${methodName}`);
-                addRoute(this.router, httpMethod, fullRoutePath, {
-                    path: path,
-                    methodName,
+                addRoute(this._router, httpMethod, fullRoutePath, {
+                    httpMethod,
+                    servicePath: path,
+                    serviceMethodName: methodName,
+                    service: serviceProxy
                 });
             }
         }
@@ -538,192 +645,25 @@ export class ScorpionApp {
         fn(this);
         return this;
     }
-    // Basic request body parser for JSON
-    async parseRequestBody(req) {
-        return new Promise((resolve, reject) => {
-            let body = "";
-            req.on("data", (chunk) => {
-                // Explicitly type chunk
-                body += chunk.toString();
-            });
-            req.on("end", () => {
-                if (!body) {
-                    return resolve({});
-                }
-                try {
-                    resolve(JSON.parse(body));
-                }
-                catch (error) {
-                    reject(new BadRequest("Invalid JSON in request body"));
-                }
-            });
-            req.on("error", (err) => {
-                // Explicitly type err
-                reject(new BadRequest("Error reading request body"));
-            });
-        });
-    }
-    /**
-     * Start the HTTP server and listen on the specified port.
-     *
-     * @param port The port number to listen on
-     * @param callback Optional callback to run when the server starts
-     * @returns The HTTP server instance
-     */
-    listen(port, host) {
-        // Use configuration values if parameters are not provided
-        const serverPort = port || this._config.server?.port || 3030;
-        const serverHost = host || this._config.server?.host || "localhost";
-        const server = http.createServer((req, res) => {
-            // Apply CORS if configured
-            if (this._config.server?.cors) {
-                const corsConfig = typeof this._config.server.cors === "object"
-                    ? this._config.server.cors
-                    : { origin: "*", methods: "GET,HEAD,PUT,PATCH,POST,DELETE" };
-                res.setHeader("Access-Control-Allow-Origin", corsConfig.origin || "*");
-                res.setHeader("Access-Control-Allow-Methods", corsConfig.methods || "GET,HEAD,PUT,PATCH,POST,DELETE");
-                if (corsConfig.headers) {
-                    res.setHeader("Access-Control-Allow-Headers", corsConfig.headers);
-                }
-                if (req.method === "OPTIONS") {
-                    res.writeHead(204);
-                    res.end();
-                    return;
-                }
-            }
+    async listen(port, host) {
+        if (this.get("rest.enabled")) {
+            const restPort = port !== undefined ? port : this.get("rest.port") || 0;
+            const restHost = host !== undefined ? host : this.get("rest.host") || "localhost";
+            const internalApp = this;
             try {
-                this._handleHttpRequest(req, res);
+                this.httpServer = await startRestServer(internalApp, restPort, restHost);
+                return this.httpServer;
             }
             catch (error) {
-                // This catch block is a last resort if _handleHttpRequest throws
-                this._sendErrorResponse(res, error);
+                console.error("[ScorpionApp] Error during app.listen while starting REST server:", error);
+                this.httpServer = undefined;
+                return undefined; // Propagate that server didn't start
             }
-        });
-        server.listen(serverPort, serverHost, () => {
-            console.log(`Scorpion app listening at http://${serverHost}:${serverPort}`);
-        });
-        return server;
-    }
-    /**
-     * Handle an incoming HTTP request by routing it to the appropriate service method.
-     *
-     * @param req The HTTP request object
-     * @param res The HTTP response object
-     */
-    async _handleHttpRequest(req, res) {
-        // Validate request basics
-        const { method, url } = req;
-        if (!method || !url) {
-            throw new BadRequest("Invalid request: missing method or URL");
         }
-        // Parse URL and extract query parameters
-        const parsedUrl = new URL(url, `http://${req.headers.host || "localhost"}`);
-        const reqPath = parsedUrl.pathname;
-        const queryParams = this._parseQueryParams(parsedUrl);
-        // Find matching route
-        const routeMatch = findRoute(this.router, method, reqPath);
-        if (!routeMatch) {
-            throw new NotFound(`Cannot ${method} ${reqPath}`);
+        else {
+            console.warn("[ScorpionApp] REST transport not configured. Server not started.");
+            return undefined;
         }
-        // Get service and method information
-        const { path, methodName } = routeMatch.data;
-        const service = this.service(path);
-        const routeParams = routeMatch.params || {};
-        const params = { route: routeParams, query: queryParams };
-        // Parse request body for methods that may contain it
-        let data;
-        if (["POST", "PUT", "PATCH"].includes(method)) {
-            data = await this.parseRequestBody(req);
-        }
-        // Verify service method exists
-        if (typeof service[methodName] !== "function") {
-            throw new NotFound(`Method '${methodName}' not implemented on service '${path}'`);
-        }
-        // Prepare initial context for hook execution
-        const initialContext = {
-            app: this,
-            service,
-            path,
-            method: methodName,
-            type: "before",
-            params: {
-                ...params,
-                req,
-                res,
-            },
-            id: routeParams?.id,
-            data,
-        };
-        // Get applicable hooks
-        const globalHooks = this.globalHooks;
-        const interceptorHooks = this.interceptorGlobalHooks || [];
-        const serviceHooks = this.serviceHooks[path] || [];
-        // Execute hooks and service method
-        const finalContext = await this.executeHooks(initialContext, globalHooks, interceptorHooks, serviceHooks);
-        // Handle errors if any occurred during hook execution
-        if (finalContext.error) {
-            this._sendErrorResponse(res, finalContext.error, finalContext.statusCode);
-            return;
-        }
-        // Send successful response
-        const statusCode = finalContext.statusCode || 200;
-        res.writeHead(statusCode, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(finalContext.result));
-    }
-    /**
-     * Parse query parameters from a URL.
-     *
-     * @param parsedUrl The parsed URL object
-     * @returns Record of query parameters, handling arrays of values
-     */
-    _parseQueryParams(parsedUrl) {
-        const queryParams = {};
-        parsedUrl.searchParams.forEach((value, key) => {
-            const existing = queryParams[key];
-            if (existing) {
-                if (Array.isArray(existing)) {
-                    existing.push(value);
-                }
-                else {
-                    queryParams[key] = [existing, value];
-                }
-            }
-            else {
-                queryParams[key] = value;
-            }
-        });
-        return queryParams;
-    }
-    /**
-     * Send an error response with appropriate status code and error details.
-     *
-     * @param res The HTTP response object
-     * @param error The error that occurred
-     * @param statusCodeOverride Optional status code to override the error's code
-     */
-    _sendErrorResponse(res, error, statusCodeOverride) {
-        let statusCode = statusCodeOverride || 500;
-        let message = "Internal Server Error";
-        let errorName = "Error";
-        let errorData;
-        if (error instanceof ScorpionError) {
-            statusCode = statusCodeOverride || error.code;
-            message = error.message;
-            errorName = error.name;
-            errorData = error.data;
-        }
-        else if (error instanceof Error) {
-            message = error.message;
-            errorName = error.name;
-            console.error(`Unhandled error:`, error);
-        }
-        res.writeHead(statusCode, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-            name: errorName,
-            message,
-            code: statusCode,
-            data: errorData,
-        }));
     }
     /**
      * Execute a service method with all applicable hooks.
@@ -742,7 +682,7 @@ export class ScorpionApp {
                 service: undefined,
                 path,
                 method: method,
-                type: "error",
+                type: 'error',
                 params: { ...params },
                 data,
                 id,
@@ -754,14 +694,13 @@ export class ScorpionApp {
         }
         // Create initial context for hook execution
         const rawService = this._rawServices[path];
-        const serviceOpts = this._serviceOptions[path];
         const initialContext = {
             app: this,
             service: serviceInstance,
             _rawService: rawService,
             path,
             method: method,
-            type: "before",
+            type: 'before',
             params: { ...params },
             data,
             id,
@@ -775,10 +714,10 @@ export class ScorpionApp {
         // If the call was successful, emit an event
         if (!finalContext.error && finalContext.result) {
             const standardMethodEvents = {
-                create: "created",
-                update: "updated",
-                patch: "patched",
-                remove: "removed",
+                create: 'created',
+                update: 'updated',
+                patch: 'patched',
+                remove: 'removed',
             };
             // Create event context
             const eventContext = {
@@ -792,13 +731,13 @@ export class ScorpionApp {
             const standardEventName = standardMethodEvents[method];
             // For custom methods, use the method name with 'ed' suffix as event name if it's a string
             // Otherwise, don't generate an automatic event name
-            const customEventName = typeof method === "string" ? `${method}ed` : undefined;
+            const customEventName = typeof method === 'string' ? `${method}ed` : undefined;
             // Determine which event name to use
             const eventName = standardEventName || customEventName;
             // The event data is the result of the method call
             const eventData = finalContext.result;
             // Emit event on the service if it has an emit method
-            if (typeof serviceInstance.emit === "function" && eventName) {
+            if (typeof serviceInstance.emit === 'function' && eventName) {
                 console.log(`Emitting event: ${eventName}`);
                 serviceInstance.emit(eventName, eventData, eventContext);
             }
@@ -847,7 +786,7 @@ export class ScorpionApp {
         const rawService = this._rawServices[path];
         // Allow service to clean up if it has a teardown method
         // Teardown should be called on the raw service instance.
-        if (rawService && typeof rawService.teardown === 'function') {
+        if (rawService && typeof rawService.teardown === "function") {
             try {
                 rawService.teardown();
             }
@@ -871,7 +810,7 @@ export class ScorpionApp {
             if (typeof service[method.name] === "function") {
                 const fullRoutePath = this._buildRoutePath(path, method.segment);
                 console.log(`Removing route: ${method.httpMethod} ${fullRoutePath}`);
-                removeRoute(this.router, method.httpMethod, fullRoutePath);
+                removeRoute(this._router, method.httpMethod, fullRoutePath);
             }
         }
         // Remove custom method routes
@@ -881,7 +820,7 @@ export class ScorpionApp {
                 !standardMethods.some((m) => m.name === methodName)) {
                 const fullRoutePath = this._buildRoutePath(path, methodName);
                 console.log(`Removing route: POST ${fullRoutePath}`);
-                removeRoute(this.router, "POST", fullRoutePath);
+                removeRoute(this._router, "POST", fullRoutePath);
             }
         }
         // Remove service-specific hooks
@@ -890,7 +829,7 @@ export class ScorpionApp {
         if (this.serviceEventListeners[path]) {
             console.log(`Cleaning up event listeners for service '${path}'`);
             for (const { event, listener } of this.serviceEventListeners[path]) {
-                this.eventEmitter.off(event, listener);
+                this.off(event, listener);
             }
             delete this.serviceEventListeners[path];
         }
@@ -916,37 +855,16 @@ export class ScorpionApp {
         return removedService;
     }
     /**
-     * Emit an event with data and optional context.
+     * Publish an event with data and optional context using the app's custom event signature.
+     * This is distinct from the standard EventEmitter.emit method.
      *
      * @param event The event name
      * @param data The event data
      * @param context Optional context information
      * @returns The app instance for chaining
      */
-    emit(event, data, context) {
-        this.eventEmitter.emit(event, data, context);
-        return this;
-    }
-    /**
-     * Register an event listener.
-     *
-     * @param event The event name or pattern to listen for
-     * @param listener The callback function to execute when the event is emitted
-     * @returns The app instance for chaining
-     */
-    on(event, listener) {
-        this.eventEmitter.on(event, listener);
-        return this;
-    }
-    /**
-     * Remove an event listener.
-     *
-     * @param event The event name
-     * @param listener The listener function to remove
-     * @returns The app instance for chaining
-     */
-    off(event, listener) {
-        this.eventEmitter.off(event, listener);
+    publish(event, data, context) {
+        this.emit(event, data, context);
         return this;
     }
     /**
@@ -959,9 +877,7 @@ export class ScorpionApp {
      */
     _buildRoutePath(path, segment) {
         // Normalize segments
-        const normalizedServicePath = path.startsWith("/")
-            ? path
-            : `/${path}`;
+        const normalizedServicePath = path.startsWith("/") ? path : `/${path}`;
         const normalizedSegment = segment
             ? segment.startsWith("/")
                 ? segment
@@ -1005,3 +921,4 @@ export class ScorpionApp {
 export const createApp = (config = {}) => {
     return new ScorpionApp(config);
 };
+//# sourceMappingURL=app.js.map

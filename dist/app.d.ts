@@ -1,26 +1,26 @@
-import * as http from "http";
-import { IScorpionApp, RegisteredService, Service, ServiceOptions, Params, HookContext, HooksApiConfig, ScorpionConfig } from "./types.js";
-export interface ExecuteServiceCallOptions<A extends IScorpionApp<any>, Svc extends Service<A>> {
-    path: string;
-    method: keyof Svc | string;
-    params?: Params;
-    data?: any;
-    id?: string | number | null;
-}
-export declare class ScorpionApp<AppServices extends Record<string, Service<any>> = Record<string, Service<any>>> implements IScorpionApp<AppServices> {
+import * as http from 'http';
+import { EventEmitter } from "events";
+import { IScorpionAppInternal, ExecuteServiceCallOptions, RegisteredService, Service, ServiceOptions, ScorpionRouteData, HookContext, HooksApiConfig, ScorpionConfig } from "./types.js";
+import { createRouter } from "rou3";
+export declare class ScorpionApp<AppServices extends Record<string, Service<any>> = Record<string, Service<any>>> extends EventEmitter implements IScorpionAppInternal<AppServices> {
+    private httpServer?;
     _isScorpionAppBrand: never;
     private _services;
     private _rawServices;
-    private _serviceOptions;
     get services(): AppServices;
-    private router;
+    private readonly _router;
     private globalHooks;
     private interceptorGlobalHooks;
     private serviceHooks;
-    private eventEmitter;
     private serviceEventListeners;
     private _config;
     constructor(config?: ScorpionConfig);
+    /**
+     * Returns the internal router instance.
+     * This is used by transports to register routes.
+     */
+    getRouter(): ReturnType<typeof createRouter<ScorpionRouteData>>;
+    private _getAllMethodNames;
     /**
      * Loads configuration from various sources and merges them with the provided config.
      * Priority order (highest to lowest):
@@ -64,7 +64,8 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
      * @param path The path of the service to retrieve (e.g., 'messages').
      * @returns The registered service instance with guaranteed hooks method.
      */
-    service<Svc extends Service<this>>(path: string): RegisteredService<this> & Svc;
+    service<SvcPath extends keyof AppServices>(path: SvcPath): RegisteredService<this, any, any>;
+    service<SvcType extends Service<this> = Service<this>>(path: string): RegisteredService<this, any, any>;
     /**
      * Registers a service on a given path.
      *
@@ -113,7 +114,7 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
      * @param path The dot-notation path to the configuration value.
      * @returns The configuration value at the specified path.
      */
-    get<T = any>(path: string): T;
+    get<T = any>(path: string): T | undefined;
     /**
      * Sets a configuration value at the specified path.
      *
@@ -129,37 +130,7 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
      * @returns The ScorpionApp instance for chaining.
      */
     configure(fn: (app: this) => void): this;
-    private parseRequestBody;
-    /**
-     * Start the HTTP server and listen on the specified port.
-     *
-     * @param port The port number to listen on
-     * @param callback Optional callback to run when the server starts
-     * @returns The HTTP server instance
-     */
-    listen(port?: number, host?: string): http.Server;
-    /**
-     * Handle an incoming HTTP request by routing it to the appropriate service method.
-     *
-     * @param req The HTTP request object
-     * @param res The HTTP response object
-     */
-    private _handleHttpRequest;
-    /**
-     * Parse query parameters from a URL.
-     *
-     * @param parsedUrl The parsed URL object
-     * @returns Record of query parameters, handling arrays of values
-     */
-    private _parseQueryParams;
-    /**
-     * Send an error response with appropriate status code and error details.
-     *
-     * @param res The HTTP response object
-     * @param error The error that occurred
-     * @param statusCodeOverride Optional status code to override the error's code
-     */
-    private _sendErrorResponse;
+    listen(port?: number, host?: string): Promise<http.Server | undefined>;
     /**
      * Execute a service method with all applicable hooks.
      *
@@ -197,30 +168,15 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
      */
     unuse<Svc extends Service<this> = Service<this>>(path: string): Svc;
     /**
-     * Emit an event with data and optional context.
+     * Publish an event with data and optional context using the app's custom event signature.
+     * This is distinct from the standard EventEmitter.emit method.
      *
      * @param event The event name
      * @param data The event data
      * @param context Optional context information
      * @returns The app instance for chaining
      */
-    emit(event: string, data: any, context?: any): this;
-    /**
-     * Register an event listener.
-     *
-     * @param event The event name or pattern to listen for
-     * @param listener The callback function to execute when the event is emitted
-     * @returns The app instance for chaining
-     */
-    on(event: string, listener: (data: any, context?: any) => void): this;
-    /**
-     * Remove an event listener.
-     *
-     * @param event The event name
-     * @param listener The listener function to remove
-     * @returns The app instance for chaining
-     */
-    off(event: string, listener: (data: any, context?: any) => void): this;
+    publish(event: string, data: any, context?: any): this;
     /**
      * Helper method to build a route path from a service path and segment.
      * Normalizes paths and handles special cases.

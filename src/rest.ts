@@ -1,6 +1,7 @@
 // src/rest.ts
 
-import * as http from "http";
+import * as http from 'http';
+import { AddressInfo } from 'net';
 import * as fs from "fs"; // Used by _loadConfig, consider if needed here or pass config
 import * as path from "path"; // Used by _loadConfig
 import { URL } from "url";
@@ -26,6 +27,19 @@ import {
 import { ScorpionError, BadRequest, NotFound, PayloadTooLarge, UnsupportedMediaType } from "./errors.js";
 import { findRoute } from "rou3"; // Only findRoute is needed here
 // import { validateSchema, registerSchemas } from "./schema.js"; // Schema validation happens before _handleServiceCall
+
+const getCircularReplacer = () => {
+  const seen = new WeakSet();
+  return (key: string, value: any) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) {
+        return '[Circular]'; // Or undefined, or null, depending on desired output
+      }
+      seen.add(value);
+    }
+    return value;
+  };
+};
 
 // Helper function (moved from app.ts)
 function parseSizeToBytes(sizeStr: string | number): number {
@@ -53,7 +67,7 @@ function parseSizeToBytes(sizeStr: string | number): number {
 // These functions will need access to the app instance, passed to startRestServer
 
 function _applyCors(app: IScorpionAppInternal<any>, req: http.IncomingMessage, res: http.ServerResponse): boolean {
-  const corsOptions = app.get("server.cors") as CorsOptions | undefined;
+  const corsOptions = app.get("rest.cors") as CorsOptions | undefined;
 
   if (!corsOptions) {
     return true; // No CORS configuration, proceed
@@ -105,7 +119,8 @@ function _applyCors(app: IScorpionAppInternal<any>, req: http.IncomingMessage, r
   }
 
   if (req.method === "OPTIONS") {
-    res.writeHead(corsOptions.optionsSuccessStatus || 204, '', {});
+    const status = corsOptions.optionsSuccessStatus || 204;
+    res.writeHead(status, http.STATUS_CODES[status] || '', {});
     res.end();
     return false; // Request handled
   }
@@ -116,7 +131,9 @@ function _applyCors(app: IScorpionAppInternal<any>, req: http.IncomingMessage, r
 async function _parseBody(app: IScorpionAppInternal<any>, req: http.IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
     const contentType = req.headers["content-type"] || "";
-    const bodyParserOptions = app.get("server.bodyParser") as BodyParserOptions || {};
+    const bodyParserOptions = app.get("rest.bodyParser") as BodyParserOptions || {};
+    console.log(`[Scorpion REST TRACE] _parseBody: contentType=${contentType}, bodyParserOptions=`, JSON.stringify(bodyParserOptions, null, 2));
+    console.log(`[Scorpion REST TRACE] _parseBody: all request headers=`, JSON.stringify(req.headers, null, 2));
     let bodyLimit: number;
 
     const chunks: Buffer[] = [];
@@ -126,14 +143,17 @@ async function _parseBody(app: IScorpionAppInternal<any>, req: http.IncomingMess
       chunks.push(chunk);
       totalLength += chunk.length;
 
-      if (contentType.startsWith("application/json")) {
+      if (contentType.startsWith("application/json") && bodyParserOptions.json) {
         bodyLimit = parseSizeToBytes((bodyParserOptions.json as BodyParserJsonOptions)?.limit || '1mb');
-      } else if (contentType.startsWith("application/x-www-form-urlencoded")) {
+      } else if (contentType.startsWith("application/x-www-form-urlencoded") && bodyParserOptions.urlencoded) {
         bodyLimit = parseSizeToBytes((bodyParserOptions.urlencoded as BodyParserUrlencodedOptions)?.limit || '1mb');
-      } else if (contentType.startsWith("text/")) {
+      } else if (contentType.startsWith("text/") && bodyParserOptions.text) {
         bodyLimit = parseSizeToBytes((bodyParserOptions.text as BodyParserTextOptions)?.limit || '1mb');
-      } else {
+      } else if (bodyParserOptions.raw) {
         bodyLimit = parseSizeToBytes((bodyParserOptions.raw as BodyParserRawOptions)?.limit || '1mb');
+      } else {
+        // If no parser is configured for this content type, set a reasonable default limit
+        bodyLimit = parseSizeToBytes('1mb');
       }
 
       if (totalLength > bodyLimit) {
@@ -145,18 +165,18 @@ async function _parseBody(app: IScorpionAppInternal<any>, req: http.IncomingMess
     req.on("end", () => {
       const buffer = Buffer.concat(chunks);
       try {
-        if (contentType.startsWith("application/json")) {
+        if (contentType.startsWith("application/json") && bodyParserOptions.json) {
           const jsonOptions = bodyParserOptions.json as BodyParserJsonOptions || {};
           const bodyString = buffer.toString(jsonOptions.encoding || 'utf8');
           if (bodyString.trim() === "") return resolve({});
           resolve(JSON.parse(bodyString, jsonOptions.reviver));
-        } else if (contentType.startsWith("application/x-www-form-urlencoded")) {
+        } else if (contentType.startsWith("application/x-www-form-urlencoded") && bodyParserOptions.urlencoded) {
           const urlencodedOptions = bodyParserOptions.urlencoded as BodyParserUrlencodedOptions || {};
           resolve(qs.parse(buffer.toString(), {
             allowPrototypes: urlencodedOptions.allowPrototypes === undefined ? false : urlencodedOptions.allowPrototypes,
             parameterLimit: urlencodedOptions.parameterLimit === undefined ? 1000 : urlencodedOptions.parameterLimit,
           }));
-        } else if (contentType.startsWith("text/")) {
+        } else if (contentType.startsWith("text/") && bodyParserOptions.text) {
           const textOptions = bodyParserOptions.text as BodyParserTextOptions || {};
           resolve(buffer.toString((textOptions.defaultCharset || 'utf8') as BufferEncoding));
         } else if (bodyParserOptions.raw) {
@@ -183,12 +203,12 @@ async function _compressResponse(
   data: any,
   headers: Record<string, string | number | string[]> = {}
 ): Promise<void> {
-  const compressionOptions = app.get("server.compression") as CompressionOptions | undefined;
+  const compressionOptions = app.get("rest.compression") as CompressionOptions | undefined;
   const acceptEncoding = (req.headers['accept-encoding'] as string) || '';
 
   let body: Buffer;
   if (typeof data === 'object' || Array.isArray(data)) {
-    body = Buffer.from(JSON.stringify(data));
+    body = Buffer.from(JSON.stringify(data, getCircularReplacer()));
     if (!headers['Content-Type']) {
       headers['Content-Type'] = 'application/json; charset=utf-8';
     }
@@ -212,27 +232,57 @@ async function _compressResponse(
   ) {
     if (acceptEncoding.includes("br")) {
       res.setHeader("Content-Encoding", "br");
-      // res.writeHead defined by pipe
       const brotliStream = zlib.createBrotliCompress();
+      brotliStream.on('error', (err) => {
+        console.error('[Scorpion REST] Brotli compression error:', err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        if (!res.writableEnded) {
+          res.end(JSON.stringify({ error: 'Internal server error during compression' }));
+        }
+      });
       Readable.from(body).pipe(brotliStream).pipe(res);
       return;
     } else if (acceptEncoding.includes("gzip")) {
       res.setHeader("Content-Encoding", "gzip");
       const gzipStream = zlib.createGzip();
+      gzipStream.on('error', (err) => {
+        console.error('[Scorpion REST] Gzip compression error:', err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        if (!res.writableEnded) {
+          res.end(JSON.stringify({ error: 'Internal server error during compression' }));
+        }
+      });
       Readable.from(body).pipe(gzipStream).pipe(res);
       return;
     } else if (acceptEncoding.includes("deflate")) {
       res.setHeader("Content-Encoding", "deflate");
       const deflateStream = zlib.createDeflate();
+      deflateStream.on('error', (err) => {
+        console.error('[Scorpion REST] Deflate compression error:', err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        }
+        if (!res.writableEnded) {
+          res.end(JSON.stringify({ error: 'Internal server error during compression' }));
+        }
+      });
       Readable.from(body).pipe(deflateStream).pipe(res);
       return;
     }
   }
-  // No compression or not applicable - headers already set
+  // No compression or not applicable
   if (!res.headersSent) {
-     res.writeHead(200, '', headers); // Default to 200, pass headers directly
+    const finalStatusCode = res.statusCode || 200; // Use existing statusCode or default to 200
+    const allHeaders = { ...res.getHeaders(), ...headers }; // Merge headers, giving precedence to explicitly passed ones
+    res.writeHead(finalStatusCode, http.STATUS_CODES[finalStatusCode] || '', allHeaders);
   }
-  res.end(body);
+  if (!res.writableEnded) { // Ensure we only end if not already ended by a stream error handler
+    res.end(body);
+  }
 }
 
 function _sendResponse(
@@ -251,7 +301,7 @@ function _sendResponse(
   });
 
   if (data === undefined || data === null || statusCode === 204) {
-    res.writeHead(statusCode, '', {});
+    res.writeHead(statusCode, http.STATUS_CODES[statusCode] || '', res.getHeaders());
     res.end();
     return;
   }
@@ -260,25 +310,57 @@ function _sendResponse(
     if (!headers['Content-Length'] && !res.getHeader('Content-Length')) {
       res.setHeader('Content-Length', Buffer.byteLength(data).toString());
     }
-    res.writeHead(statusCode, '', {});
+    res.writeHead(statusCode, http.STATUS_CODES[statusCode] || '', res.getHeaders());
     res.end(data);
   } else {
-    const jsonData = JSON.stringify(data);
+    // Diagnostic: Test stringify with replacer on a known circular object
+    try {
+      const circularObj: any = { name: 'test' };
+      circularObj.self = circularObj;
+      const testJson = JSON.stringify(circularObj, getCircularReplacer());
+      console.log('[Scorpion REST TRACE] _sendResponse: circular test stringified:', testJson);
+    } catch (e: any) {
+      console.error('[Scorpion REST TRACE] _sendResponse: circular test FAILED:', e.message, e.stack);
+    }
+
+    console.log('[Scorpion REST TRACE] _sendResponse: stringifying data (original with spread):', { ...data });
+
+    let originalObjectPrototypeToJSON: any = null;
+    let objectPrototypeToJSONExists = false;
+    if (Object.prototype.hasOwnProperty('toJSON')) {
+      objectPrototypeToJSONExists = true;
+      originalObjectPrototypeToJSON = (Object.prototype as any).toJSON;
+      console.warn('[Scorpion REST TRACE] _sendResponse: Object.prototype.toJSON FOUND. Temporarily removing it.');
+      delete (Object.prototype as any).toJSON;
+    } else {
+      console.log('[Scorpion REST TRACE] _sendResponse: Object.prototype.toJSON NOT found.');
+    }
+
+    let jsonData = '';
+    try {
+      jsonData = JSON.stringify({ ...data }, getCircularReplacer());
+    } finally {
+      if (objectPrototypeToJSONExists) {
+        (Object.prototype as any).toJSON = originalObjectPrototypeToJSON;
+        console.warn('[Scorpion REST TRACE] _sendResponse: Object.prototype.toJSON RESTORED.');
+      }
+    }
     if (!headers['Content-Length'] && !res.getHeader('Content-Length')) {
       res.setHeader('Content-Length', Buffer.byteLength(jsonData).toString());
     }
-    res.writeHead(statusCode, '', {});
+    res.writeHead(statusCode, http.STATUS_CODES[statusCode] || '', res.getHeaders());
     res.end(jsonData);
   }
 }
 
 async function _handleRequest(app: IScorpionAppInternal<any>, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  console.log(`[Scorpion REST TRACE] _handleRequest START: ${req.method} ${req.url}`);
   // Access currentRequest and currentResponse via app if they are still needed by other parts of app
   // For now, assuming they are primarily for REST context, so managed locally or passed if essential.
   // app.currentRequest = req;
   // app.currentResponse = res;
 
-  if (!_applyCors(app, req, res)) {
+  if (!await _applyCors(app, req, res)) {
     // app.currentRequest = undefined;
     // app.currentResponse = undefined;
     return; 
@@ -296,18 +378,30 @@ async function _handleRequest(app: IScorpionAppInternal<any>, req: http.Incoming
   }
 
   try {
-    const route = findRoute<ScorpionRouteData>(app.getRouter(), requestPath); // Use app.getRouter()
+    console.log(`[Scorpion REST TRACE] Entering _handleRequest main try block for ${method} ${requestPath}`);
+    console.log(`[Scorpion REST TRACE] Finding route for: ${method} ${requestPath}`);
+    const route = findRoute<ScorpionRouteData>(
+      app.getRouter(),
+      method,
+      requestPath
+    ); // Use app.getRouter()
 
     if (!route || !route.data) {
+      console.log(`[Scorpion REST TRACE] Route or route.data is null/undefined for ${method} ${requestPath}. Throwing NotFound.`);
       throw new NotFound(`No service found for path '${requestPath}'`);
     }
 
     const { servicePath, httpMethod, serviceMethodName, allowStream } = route.data;
     const serviceInstance = app.service(servicePath);
 
+    console.log(`[Scorpion REST TRACE] Service instance found:`, !!serviceInstance);
+
     if (!serviceInstance) {
+      console.log(`[Scorpion REST TRACE] Service instance not found for path: ${servicePath}`);
       throw new NotFound(`Service '${servicePath}' not found.`);
     }
+
+    console.log(`[Scorpion REST TRACE] Checking HTTP method: ${httpMethod} vs ${method}`);
 
     if (httpMethod.toUpperCase() !== method.toUpperCase()) {
       if (method !== 'OPTIONS') {
@@ -318,15 +412,23 @@ async function _handleRequest(app: IScorpionAppInternal<any>, req: http.Incoming
       }
     }
 
+    console.log(`[Scorpion REST TRACE] About to check if body parsing needed for: ${method}`);
+
     let requestData: any;
     if (["POST", "PUT", "PATCH"].includes(method.toUpperCase())) {
+      console.log(`[Scorpion REST TRACE] Parsing body for: ${method} ${requestPath}`);
       try {
         requestData = await _parseBody(app, req);
-      } catch (error) {
+      } catch (error: any) {
+        console.error(`[Scorpion REST TRACE] Error in _handleRequest main try block for ${method} ${requestPath}:`, error, 'Stack:', error?.stack);
         if (error instanceof ScorpionError) {
-          _sendResponse(res, error.statusCode, { error: error.message, code: error.code, data: error.data });
+          let safeErrorData = error.data;
+          if (typeof error.data === 'object' && error.data !== null) {
+            safeErrorData = "[Object data omitted in JSON response due to potential circularity. Check server logs for full error details.]";
+          }
+          _sendResponse(res, error.statusCode, { name: error.name, message: error.message, code: error.code, path: requestPath, data: safeErrorData, stack: error.stack });
         } else {
-          _sendResponse(res, 400, { error: (error as Error).message });
+          _sendResponse(res, 500, { error: 'Internal Server Error', details: (error as Error).message, path: requestPath });
         }
         // app.currentRequest = undefined;
         // app.currentResponse = undefined;
@@ -376,15 +478,21 @@ async function _handleRequest(app: IScorpionAppInternal<any>, req: http.Incoming
       }
     }
 
-    const result = await app.executeServiceCall({
+    console.log(`[Scorpion REST TRACE] Executing service call for: ${servicePath}#${serviceMethodName}`);
+    const hookContext = await app.executeServiceCall({
       path: servicePath,
       method: serviceMethodName,
       id: id,
       data: requestData,
       params: params,
     });
+    
+    // Extract the result from the hook context
+    const result = hookContext.result;
+    console.log(`[Scorpion REST TRACE] Extracted result:`, result);
 
     if (serviceMethodName === 'remove' && (result === undefined || result === null || (typeof result === 'object' && Object.keys(result).length === 0) )) {
+      console.log(`[Scorpion REST TRACE] Sending 204 response for remove operation.`);
       _sendResponse(res, 204, null);
     } else if (serviceMethodName === 'create') {
       // For create, send 201 by default, compressResponse will handle actual sending with 200 if not overridden
@@ -392,21 +500,23 @@ async function _handleRequest(app: IScorpionAppInternal<any>, req: http.Incoming
       // To enforce 201, _sendResponse would need to be called after _compressResponse or _compressResponse modified.
       // For simplicity, we assume 200 from compress unless it's a 204 scenario.
       res.statusCode = 201; // Set status before compression
+      console.log(`[Scorpion REST TRACE] Compressing response for create operation (status ${res.statusCode}).`);
       await _compressResponse(app, req, res, result, { 'Content-Type': 'application/json; charset=utf-8' });
     } else {
+      console.log(`[Scorpion REST TRACE] Compressing response for other operation (status ${res.statusCode || 'default'}).`);
       await _compressResponse(app, req, res, result);
     }
 
   } catch (error: any) {
-    console.error("[Scorpion REST] Error handling request:", error);
+    console.error(`[Scorpion REST TRACE] Error in _handleRequest main catch block for ${method} ${requestPath}. Name: ${error?.name}, Message: ${error?.message}, Stack: ${error?.stack}`);
     if (error instanceof ScorpionError) {
-      _sendResponse(res, error.statusCode, {
-        error: error.message,
-        code: error.code,
-        data: error.data,
+      _sendResponse(res, error.statusCode, { 
+        message: "ScorpionError occurred. Check server logs for details."
       });
     } else {
-      _sendResponse(res, 500, { error: "Internal Server Error" });
+      _sendResponse(res, 500, { 
+        message: "Generic error occurred. Check server logs for details."
+      });
     }
   }
   // app.currentRequest = undefined;
@@ -416,40 +526,39 @@ async function _handleRequest(app: IScorpionAppInternal<any>, req: http.Incoming
 export function startRestServer(
   app: IScorpionAppInternal<any>,
   port: number,
-  host: string,
-  callback?: () => void
-): http.Server | undefined {
+  host: string
+): Promise<http.Server | undefined> {
   try {
     const server = http.createServer(async (req, res) => {
+      console.log(`[Scorpion REST TRACE] Server received request: ${req.method} ${req.url}`);
       try {
         await _handleRequest(app, req, res);
       } catch (error) {
-        console.error("[Scorpion REST] Unhandled error in request pipeline:", error);
+        console.error('[Scorpion REST] Unhandled error during request processing in createServer callback:', error);
         if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-        }
-        if (!res.writableEnded) {
-          res.end(JSON.stringify({ error: "Internal Server Error" }));
+          _sendResponse(res, 500, { error: 'Internal Server Error' });
         }
       }
     });
 
-    server.listen(port, host, () => {
-      console.log(`[Scorpion REST] Server listening on http://${host}:${port}`);
-      app.emit("listening", server);
-      if (callback) {
-        callback();
-      }
-    });
+    return new Promise<http.Server | undefined>((resolve, reject) => {
+      server.on('error', (err: NodeJS.ErrnoException) => {
+        console.error('[Scorpion REST] Server error:', err);
+        app.emit('rest_error', err);
+        if (!server.listening) { // Only reject if error happens before listening
+          reject(err);
+        } // Otherwise, the server was listening and the error is runtime (e.g. EPIPE)
+      });
 
-    server.on("error", (err) => {
-      console.error("[Scorpion REST] Server error:", err);
-      app.emit("error", err);
+      server.listen(port, host, () => {
+        console.log(`[Scorpion REST] Server listening on http://${host}:${(server.address() as AddressInfo)?.port || port}`);
+        app.emit('rest_listening', server);
+        resolve(server);
+      });
     });
-    return server;
   } catch (error) {
-    console.error("[Scorpion REST] Failed to start HTTP server:", error);
-    app.emit("error", error as Error);
-    return undefined;
+    console.error('[Scorpion REST] Failed to create server instance (outer try-catch):', error);
+    app.emit('rest_error', error as Error);
+    return Promise.resolve(undefined); // Or reject(error) if this path should fail the listen() call
   }
 }

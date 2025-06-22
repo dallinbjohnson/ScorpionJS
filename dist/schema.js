@@ -101,38 +101,14 @@ function validateType(value, type) {
  * @returns A before hook function that validates the request data
  */
 export function validateData(schema, options = {}) {
-    // If schema is not a Schema object, convert it to one
     const schemaObj = typeof schema === 'object' && 'definition' in schema
         ? schema
         : { definition: schema, options };
     return async function validateDataHook(context) {
-        // --- Start diagnostic logs for validator selection ---
-        const servicePathForLog = context?.path || 'unknown-service';
-        const serviceOptionsForLog = context.service?.options;
-        const serviceValidatorObjForLog = serviceOptionsForLog?.validator;
-        const appInstanceForLog = context.app;
-        const appLevelValidatorObjForLog = appInstanceForLog?.get('validator');
-        console.log(`[DEBUG validateData for ${servicePathForLog}] Validator selection debug info (at start of hook):`);
-        console.log(`  - context.service exists: ${!!context.service}`);
-        console.log(`  - context.service.options exists: ${!!serviceOptionsForLog}`);
-        console.log(`  - context.service.options.validator exists: ${!!serviceValidatorObjForLog}`);
-        if (serviceValidatorObjForLog) {
-            console.log(`  - typeof context.service.options.validator.validate: ${typeof serviceValidatorObjForLog.validate}`);
-        }
-        console.log(`  - context.app exists: ${!!appInstanceForLog}`);
-        console.log(`  - app.get('validator') exists: ${!!appLevelValidatorObjForLog}`);
-        if (appLevelValidatorObjForLog) {
-            console.log(`  - typeof app.get('validator').validate: ${typeof appLevelValidatorObjForLog.validate}`);
-        }
-        console.log(`  - schemaObj.validate exists: ${!!schemaObj.validate}`);
-        if (schemaObj.validate) {
-            console.log(`  - typeof schemaObj.validate: ${typeof schemaObj.validate}`);
-        }
-        // --- End diagnostic logs ---
         if (!context.data) {
             return context;
         }
-        // Check for dynamic schema selection based on context
+        // Determine the correct schema to use
         let finalSchema = schemaObj.definition;
         if (schemaObj.options?.contextRules) {
             for (const rule of schemaObj.options.contextRules) {
@@ -142,29 +118,14 @@ export function validateData(schema, options = {}) {
                 }
             }
         }
-        // Check for service-specific validator
-        let validator;
-        // First check if the service has a validator
-        if (context.service?.options?.validator?.validate) {
-            validator = (data, options) => {
-                return context.service.options.validator.validate(finalSchema, data, options || schemaObj.options);
-            };
-        }
-        // Then check if the app has a validator
-        else if (context.app?.get('validator')?.validate) {
-            validator = (data, options) => {
-                return context.app.get('validator').validate(finalSchema, data, options || schemaObj.options);
-            };
-        }
-        // Fall back to schema-specific validator or default validator
-        else {
-            validator = schemaObj.validate || ((data, options) => {
-                return defaultValidator(finalSchema, data, options || schemaObj.options);
-            });
-        }
+        // Validator selection logic:
+        // 1. Service-specific validator
+        // 2. App-level validator
+        // 3. Default validator
+        const validator = context.service?._options?.validator || context.app.get('validator');
+        const validationFn = validator?.validate || defaultValidator;
         const finalOptions = schemaObj.options;
-        const validationResult = validator(context.data, finalOptions);
-        // console.log('[validateData] Validation Result:', validationResult); // Original log, can be noisy, let's keep it commented for now unless needed
+        const validationResult = validationFn(finalSchema, context.data, finalOptions);
         if (!validationResult.valid) {
             throw new BadRequest('Validation error', {
                 errors: validationResult.errors,
@@ -186,7 +147,6 @@ export function validateData(schema, options = {}) {
  * @returns A before hook function that validates the query parameters
  */
 export function validateQuery(schema, options = {}) {
-    // If schema is not a Schema object, convert it to one
     const schemaObj = typeof schema === 'object' && 'definition' in schema
         ? schema
         : { definition: schema, options };
@@ -194,7 +154,7 @@ export function validateQuery(schema, options = {}) {
         if (!context.params?.query) {
             return context;
         }
-        // Check for dynamic schema selection based on context
+        // Determine the correct schema to use
         let finalSchema = schemaObj.definition;
         if (schemaObj.options?.contextRules) {
             for (const rule of schemaObj.options.contextRules) {
@@ -204,37 +164,23 @@ export function validateQuery(schema, options = {}) {
                 }
             }
         }
-        // Check for service-specific validator
-        let validator;
-        // First check if the service has a validator
-        if (context.service?.options?.validator?.validate) {
-            validator = (data, options) => {
-                return context.service.options.validator.validate(finalSchema, data, options || schemaObj.options);
-            };
-        }
-        // Then check if the app has a validator
-        else if (context.app?.get('validator')?.validate) {
-            validator = (data, options) => {
-                return context.app.get('validator').validate(finalSchema, data, options || schemaObj.options);
-            };
-        }
-        // Fall back to schema-specific validator or default validator
-        else {
-            validator = schemaObj.validate || ((data, options) => {
-                return defaultValidator(finalSchema, data, options || schemaObj.options);
-            });
-        }
-        const result = validator(context.params.query, schemaObj.options);
-        console.log('[validateQuery] Validation Result:', result);
-        if (!result.valid) {
+        // Validator selection logic:
+        // 1. Service-specific validator
+        // 2. App-level validator
+        // 3. Default validator
+        const validator = context.service?._options?.validator || context.app.get('validator');
+        const validationFn = validator?.validate || defaultValidator;
+        const finalOptions = schemaObj.options;
+        const validationResult = validationFn(finalSchema, context.params.query, finalOptions);
+        if (!validationResult.valid) {
             throw new BadRequest('Query validation error', {
-                errors: result.errors,
+                errors: validationResult.errors,
                 schema: finalSchema
             });
         }
         // If the validator returned transformed data, update the context
-        if (result.data !== undefined) {
-            context.params.query = result.data;
+        if (validationResult.data !== undefined) {
+            context.params.query = validationResult.data;
         }
         return context;
     };
@@ -285,3 +231,4 @@ export function registerSchemas(service, schemas) {
     // Store schemas on the service for introspection
     service._schemas = schemas;
 }
+//# sourceMappingURL=schema.js.map

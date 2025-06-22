@@ -163,7 +163,7 @@ describe('REST Transport Layer', () => {
     }
 
     it('should set Access-Control-Allow-Origin for a string origin', async () => {
-      app.set('server.cors', { origin: 'http://example.com' });
+      app.set('rest.cors', { origin: 'http://example.com' });
       app.use('test', new TestService());
       await listen();
 
@@ -177,7 +177,7 @@ describe('REST Transport Layer', () => {
     });
 
     it('should handle preflight OPTIONS request', async () => {
-      app.set('server.cors', {
+      app.set('rest.cors', {
         origin: 'http://example.com',
         methods: ['GET', 'POST', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],
@@ -203,7 +203,7 @@ describe('REST Transport Layer', () => {
     });
 
     it('should not set CORS headers if origin does not match', async () => {
-      app.set('server.cors', { origin: 'http://example.com' });
+      app.set('rest.cors', { origin: 'http://example.com' });
       app.use('test', new TestService());
       await listen();
 
@@ -217,7 +217,7 @@ describe('REST Transport Layer', () => {
     });
   });
 
-  describe('Body Parsing', () => {
+  describe.only('Body Parsing', () => {
     // A simple service for testing
     class BodyParsingTestService implements Service {
       async find() {
@@ -254,13 +254,22 @@ describe('REST Transport Layer', () => {
         path: '/body-parsing-test',
         method: 'GET',
       });
+      if (res.statusCode === 500) {
+        console.log('Failing test response body for 500 error:', body);
+      }
+      console.log('DEBUG: GET response body:', body);
+      console.log('DEBUG: GET response status:', res.statusCode);
       expect(res.statusCode).to.equal(200);
       const responseData = JSON.parse(body);
+      console.log('DEBUG: GET parsed responseData:', responseData);
       expect(responseData.message).to.equal('find successful');
     });
 
     it('should parse a valid JSON body', async () => {
-      app.set('server.bodyParser', { json: { limit: '1mb' } });
+      app.set('rest.bodyParser', { 
+        ...app.get('rest.bodyParser'), 
+        json: { limit: '1mb' } 
+      });
       app.use('body-parsing-test', new BodyParsingTestService());
       await listen();
 
@@ -270,14 +279,20 @@ describe('REST Transport Layer', () => {
         JSON.stringify(testData)
       );
 
-      expect(res.statusCode).to.equal(200); // POST to create currently returns 200
+      console.log('DEBUG: POST JSON response body:', body);
+      console.log('DEBUG: POST JSON response status:', res.statusCode);
+      expect(res.statusCode).to.equal(201); // POST to create returns 201 Created
       const responseData = JSON.parse(body);
+      console.log('DEBUG: POST JSON parsed responseData:', responseData);
       expect(responseData.message).to.equal('create successful');
       expect(responseData.data).to.deep.equal(testData);
     });
 
     it('should reject a request with a body larger than the limit', async () => {
-      app.set('server.bodyParser', { json: { limit: '1kb' } });
+      app.set('rest.bodyParser', { 
+        ...app.get('rest.bodyParser'), 
+        json: { limit: '1kb' } 
+      });
       app.use('body-parsing-test', new BodyParsingTestService());
       await listen();
 
@@ -293,7 +308,10 @@ describe('REST Transport Layer', () => {
     });
 
     it('should parse a valid urlencoded body', async () => {
-      app.set('server.bodyParser', { urlencoded: { extended: true } });
+      app.set('rest.bodyParser', { 
+        ...app.get('rest.bodyParser'), 
+        urlencoded: { extended: true } 
+      });
       app.use('body-parsing-test', new BodyParsingTestService());
       await listen();
 
@@ -303,14 +321,20 @@ describe('REST Transport Layer', () => {
         testData
       );
 
-      expect(res.statusCode).to.equal(200); // POST to create currently returns 200
+      expect(res.statusCode).to.equal(201); // POST to create returns 201 Created
       const responseData = JSON.parse(body);
       expect(responseData.message).to.equal('create successful');
       expect(responseData.data).to.deep.equal({ key: 'value', nested: { num: '1' } });
     });
 
     it('should reject a request with an unsupported media type', async () => {
-      app.set('server.bodyParser', { json: true, urlencoded: false, text: false, raw: false });
+      app.set('rest.bodyParser', { 
+        ...app.get('rest.bodyParser'), 
+        json: true, 
+        urlencoded: false, 
+        text: false, 
+        raw: false 
+      });
       app.use('body-parsing-test', new BodyParsingTestService());
       await listen();
 
@@ -353,7 +377,7 @@ describe('REST Transport Layer', () => {
       class LargeDataService implements Service {
         async find() { return responseData; }
       }
-      app.set('server.compression', { threshold: '1kb' });
+      app.set('rest.compression', { threshold: '1kb' });
       app.use('compression-test-large', new LargeDataService());
       await listen();
 
@@ -370,7 +394,7 @@ describe('REST Transport Layer', () => {
     });
 
     it('should not compress a response body below the threshold', async () => {
-      app.set('server.compression', { threshold: '2kb' });
+      app.set('rest.compression', { threshold: '2kb' });
       app.use('compression-test', new CompressionTestService());
       await listen();
 

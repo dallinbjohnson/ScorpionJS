@@ -60,17 +60,113 @@ export interface CompressionOptions {
   // Add other options from 'compression' library if needed, e.g., memLevel, strategy
 }
 
+export interface RestTransportConfig {
+  enabled?: boolean;
+  port?: number;
+  host?: string;
+  cors?: boolean | CorsOptions;
+  bodyParser?: boolean | BodyParserOptions;
+  compression?: boolean | CompressionOptions;
+  // Base path for all REST routes, e.g., /api/v1
+  basePath?: string;
+}
+
+export interface WebSocketTransportConfig {
+  enabled?: boolean;
+  port?: number; // Can be same as REST or different
+  host?: string;
+  path?: string; // e.g., /realtime or /ws
+  cors?: boolean | CorsOptions; // CORS options for WebSocket handshake
+  // Options for the underlying WebSocket server (e.g., ws, uWebSockets.js, crossws)
+  serverOptions?: Record<string, any>; 
+}
+
+export interface LoggingConfig {
+  level?: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
+  prettyPrint?: boolean | Record<string, any>; // Options for pino-pretty or similar
+  // Define specific transports, e.g., for file logging or external services
+  transports?: Array<{ type: string; options?: Record<string, any> }>; 
+}
+
+export interface SchemaValidationConfig {
+  // Default validator to use if not specified at service/method level
+  defaultProvider?: 'zod' | 'ajv' | 'joi' | string; 
+  // Global options for the chosen validator provider
+  providerOptions?: Record<string, any>; 
+  // Whether to strictly validate all incoming data by default
+  strict?: boolean;
+}
+
+export interface CircuitBreakerConfig {
+  enabled?: boolean;
+  timeout?: number; // ms, time before opening the circuit on failure
+  errorThresholdPercentage?: number; // % of failures to open circuit
+  resetTimeout?: number; // ms, time before attempting to close circuit
+}
+
+export interface TimeoutConfig {
+  enabled?: boolean;
+  default?: number; // ms, global default timeout for service calls
+}
+
+export interface RetriesConfig {
+  enabled?: boolean;
+  defaultAttempts?: number;
+  // Could expand to include backoff strategies: 'fixed', 'exponential'
+  backoffStrategy?: string; 
+  defaultDelay?: number; // ms, for fixed backoff
+}
+
+export interface BulkheadConfig {
+  enabled?: boolean;
+  maxConcurrent?: number; // Max concurrent requests
+  maxQueue?: number; // Max queued requests if concurrent limit is reached
+}
+
+export interface FaultToleranceConfig {
+  circuitBreaker?: CircuitBreakerConfig;
+  timeout?: TimeoutConfig;
+  retries?: RetriesConfig;
+  bulkhead?: BulkheadConfig;
+}
+
+export interface ServiceDiscoveryConfig {
+  enabled?: boolean;
+  // e.g., 'static', 'redis', 'consul', 'etcd', 'kubernetes'
+  strategy?: string; 
+  // Options specific to the chosen strategy
+  options?: Record<string, any>; 
+}
+
+export interface I18nConfig {
+  defaultLocale?: string;
+  locales?: string[];
+  directory?: string; // Path to translation files (e.g., ./locales)
+  // Options for the i18n library (e.g., i18next)
+  parserOptions?: Record<string, any>; 
+}
+
 export interface ScorpionConfig {
   // Environment settings
   env?: string;
-  // Server configuration
-  server?: {
-    port?: number;
-    host?: string;
-    cors?: boolean | CorsOptions;
-    bodyParser?: boolean | BodyParserOptions;
-    compression?: boolean | CompressionOptions;
-  };
+  // Transport configurations
+  rest?: RestTransportConfig;
+  websocket?: WebSocketTransportConfig;
+
+  // Logging configuration
+  logging?: LoggingConfig;
+
+  // Schema validation configuration
+  validation?: SchemaValidationConfig;
+
+  // Fault tolerance configuration
+  faultTolerance?: FaultToleranceConfig;
+
+  // Service discovery configuration
+  serviceDiscovery?: ServiceDiscoveryConfig;
+
+  // Internationalization (i18n) configuration
+  i18n?: I18nConfig;
   // Authentication configuration
   auth?: Record<string, any>;
   // Database configuration
