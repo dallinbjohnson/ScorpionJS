@@ -1,7 +1,14 @@
 // test/transport.test.ts
 
 import { describe, it, beforeEach, afterEach } from 'mocha';
-import { createRouter, addRoute, findRoute, removeRoute } from "rou3"; 
+import { createRouter, addRoute, findRoute, removeRoute } from "rou3";
+
+import { Socket } from "net";
+import { expect } from "chai";
+import * as http from "http";
+import * as zlib from "zlib";
+import { createApp, ScorpionApp } from "../src/app.js";
+import { Service } from "../src/types.js";
 
 describe('rou3 sanity check', () => {
   it('should add, find, and remove a route', () => {
@@ -43,13 +50,6 @@ describe('rou3 sanity check', () => {
     expect(route1From2).to.be.undefined;
   });
 });
-
-import { Socket } from 'net';
-import { expect } from 'chai';
-import * as http from 'http';
-import * as zlib from 'zlib';
-import { createApp, ScorpionApp } from '../src/app.js';
-import { Service } from '../src/types.js';
 
 // A simple service for testing
 
@@ -217,7 +217,7 @@ describe('REST Transport Layer', () => {
     });
   });
 
-  describe.only('Body Parsing', () => {
+  describe('Body Parsing', () => {
     // A simple service for testing
     class BodyParsingTestService implements Service {
       async find() {

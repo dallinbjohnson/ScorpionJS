@@ -4,25 +4,14 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "Debug Mocha Tests",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "--loader",
-        "ts-node/esm",
-        "${workspaceFolder}/node_modules/mocha/bin/_mocha"
-      ],
-      "args": [
-        "test/**/*.test.ts",
-        "--timeout",
-        "999999",
-        "--colors"
-      ],
+      "name": "Run tests",
+      "skipFiles": ["<node_internals>/**"],
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "test"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
-      "skipFiles": [
-        "<node_internals>/**"
-      ]
-    }
+      "restart": true
+    },
   ]
 }
