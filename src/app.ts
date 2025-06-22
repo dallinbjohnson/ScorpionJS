@@ -40,10 +40,14 @@ import { createRouter, addRoute, findRoute, removeRoute } from "rou3";
 import { validateSchema, registerSchemas } from "./schema.js";
 
 export class ScorpionApp<
-  AppServices extends Record<string, Service<any>> = Record<string, Service<any>>
->
-extends EventEmitter
-implements IScorpionAppInternal<AppServices> {
+    AppServices extends Record<string, Service<any>> = Record<
+      string,
+      Service<any>
+    >
+  >
+  extends EventEmitter
+  implements IScorpionAppInternal<AppServices>
+{
   private httpServer?: http.Server;
   _isScorpionAppBrand!: never;
   // A registry for all services, mapping a path to a service instance.
@@ -88,18 +92,17 @@ implements IScorpionAppInternal<AppServices> {
     const methods = new Set<string>();
     let current = obj;
     do {
-      Object.getOwnPropertyNames(current).forEach(name => {
+      Object.getOwnPropertyNames(current).forEach((name) => {
         // Check if the property is a function and not an ES6 class constructor
-        if (typeof current[name] === 'function' && name !== 'constructor') {
+        if (typeof current[name] === "function" && name !== "constructor") {
           methods.add(name);
         }
       });
       current = Object.getPrototypeOf(current);
-    // Stop when we reach the Object prototype or null (for objects created with Object.create(null))
+      // Stop when we reach the Object prototype or null (for objects created with Object.create(null))
     } while (current && current !== Object.prototype && current !== null);
     return Array.from(methods);
   }
-
 
   /**
    * Loads configuration from various sources and merges them with the provided config.
@@ -124,11 +127,7 @@ implements IScorpionAppInternal<AppServices> {
         cors: {
           origin: "*",
           methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-          allowedHeaders: [
-            "Content-Type",
-            "Authorization",
-            "X-Requested-With",
-          ],
+          allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
           credentials: true,
           optionsSuccessStatus: 204,
         },
@@ -148,7 +147,8 @@ implements IScorpionAppInternal<AppServices> {
         cors: {
           origin: "*", // Typically, WebSocket CORS is handled by the HTTP upgrade request
         },
-        serverOptions: { // Defaults for 'ws' library
+        serverOptions: {
+          // Defaults for 'ws' library
           // perMessageDeflate: {
           //   zlibDeflateOptions: {
           //     chunkSize: 1024,
@@ -164,7 +164,7 @@ implements IScorpionAppInternal<AppServices> {
           //   concurrencyLimit: 10, // Limits zlib concurrency for perf.
           //   threshold: 1024 // Size (in bytes) below which messages
           // }
-        }
+        },
       },
       logging: {
         level: process.env.NODE_ENV === "production" ? "info" : "debug",
@@ -380,8 +380,12 @@ implements IScorpionAppInternal<AppServices> {
    * @param path The path of the service to retrieve (e.g., 'messages').
    * @returns The registered service instance with guaranteed hooks method.
    */
-  public service<SvcPath extends keyof AppServices>(path: SvcPath): RegisteredService<this, any, any>;
-  public service<SvcType extends Service<this> = Service<this>>(path: string): RegisteredService<this, any, any>;
+  public service<SvcPath extends keyof AppServices>(
+    path: SvcPath
+  ): RegisteredService<this, any, any>;
+  public service<SvcType extends Service<this> = Service<this>>(
+    path: string
+  ): RegisteredService<this, any, any>;
   public service(path: string): RegisteredService<this, any, any> {
     const service = this._services[path];
 
@@ -587,7 +591,9 @@ implements IScorpionAppInternal<AppServices> {
     for (const methodName of allMethodNames) {
       if (
         typeof (serviceProxy as any)[methodName] === "function" &&
-        !["constructor", "setup", "emit", "on", "off", "hooks"].includes(methodName)
+        !["constructor", "setup", "emit", "on", "off", "hooks"].includes(
+          methodName
+        )
       ) {
         const methodOptions = options?.methods?.[methodName];
         let httpMethod: string;
@@ -646,7 +652,7 @@ implements IScorpionAppInternal<AppServices> {
           httpMethod,
           servicePath: path,
           serviceMethodName: methodName,
-          service: serviceProxy
+          service: serviceProxy,
         });
       }
     }
@@ -666,6 +672,121 @@ implements IScorpionAppInternal<AppServices> {
     this._services[path] = serviceProxy;
 
     return this;
+  }
+
+  /**
+   * Unregister (unuse) a service from the application.
+   * This removes the service from the registry, cleans up any hooks associated with it,
+   * removes all routes that were created for it, and cleans up any event listeners.
+   * If the service has a teardown method, it will be called to allow for custom cleanup.
+   *
+   * The following cleanup operations are performed:
+   * - All HTTP routes (standard and custom) are removed
+   * - Service-specific hooks are detached
+   * - Global hooks targeting this service are filtered out
+   * - All event listeners registered by this service are removed
+   * - The service's teardown() method is called if it exists
+   *
+   * @param path The path of the service to unuse
+   * @returns The removed service instance
+   * @throws Error if the service is not found.
+   */
+  public unuse<Svc extends Service<this> = Service<this>>(path: string): Svc {
+    // Check if the service exists
+    if (!this._services[path]) {
+      throw new Error(`Service on path '${path}' not found.`);
+    }
+
+    console.log(`Unregistering service on path '${path}'`);
+
+    // Get the service instance before removing it
+    const service = this._services[path];
+    const rawService = this._rawServices[path] as Svc;
+
+    // Allow service to clean up if it has a teardown method
+    // Teardown should be called on the raw service instance.
+    if (rawService && typeof (rawService as any).teardown === "function") {
+      try {
+        (rawService as any).teardown();
+      } catch (error) {
+        console.error(`Error during teardown of service '${path}':`, error);
+      }
+    }
+
+    // We'll use the _buildRoutePath method for route path construction
+
+    // Remove all routes associated with this service
+    // Standard methods
+    const standardMethods = [
+      { name: "find", httpMethod: "GET", segment: "" },
+      { name: "get", httpMethod: "GET", segment: ":id" },
+      { name: "create", httpMethod: "POST", segment: "" },
+      { name: "update", httpMethod: "PUT", segment: ":id" },
+      { name: "patch", httpMethod: "PATCH", segment: ":id" },
+      { name: "remove", httpMethod: "DELETE", segment: ":id" },
+    ];
+
+    // Remove standard method routes
+    for (const method of standardMethods) {
+      if (typeof (service as any)[method.name] === "function") {
+        const fullRoutePath = this._buildRoutePath(path, method.segment);
+        console.log(`Removing route: ${method.httpMethod} ${fullRoutePath}`);
+        removeRoute(this._router, method.httpMethod, fullRoutePath);
+      }
+    }
+
+    // Remove custom method routes
+    for (const methodName in service) {
+      if (
+        typeof (service as any)[methodName] === "function" &&
+        !methodName.startsWith("_") &&
+        !standardMethods.some((m) => m.name === methodName)
+      ) {
+        const fullRoutePath = this._buildRoutePath(path, methodName);
+        console.log(`Removing route: POST ${fullRoutePath}`);
+        removeRoute(this._router, "POST", fullRoutePath);
+      }
+    }
+
+    // Remove service-specific hooks
+    delete this.serviceHooks[path];
+
+    // Clean up service-specific event listeners
+    if (this.serviceEventListeners[path]) {
+      console.log(`Cleaning up event listeners for service '${path}'`);
+      for (const { event, listener } of this.serviceEventListeners[path]) {
+        this.off(event, listener);
+      }
+      delete this.serviceEventListeners[path];
+    }
+
+    // Store the raw service instance to be returned
+    const removedService = rawService;
+
+    // Remove the service from the registry
+    delete this._services[path];
+    delete this._rawServices[path];
+
+    // Filter out any interceptor hooks that specifically target this service
+
+    this.interceptorGlobalHooks = this.interceptorGlobalHooks.filter((hook) => {
+      // Keep hooks with wildcard pattern
+      if (hook.servicePathPattern === "*") return true;
+
+      // Keep hooks that don't match this service path
+      if (
+        hook.servicePathPattern &&
+        typeof hook.servicePathPattern === "string"
+      ) {
+        return !this._isPathMatch(path, hook.servicePathPattern);
+      }
+
+      // Default to keeping the hook if we can't determine
+      return true;
+    });
+
+    // Return the removed service instance
+    return removedService as Svc;
   }
 
   /**
@@ -876,20 +997,35 @@ implements IScorpionAppInternal<AppServices> {
     host?: string
   ): Promise<http.Server | undefined> {
     if (this.get("rest.enabled")) {
-      const restPort = port !== undefined ? port : (this.get("rest.port") as number | undefined) || 0;
-      const restHost = host !== undefined ? host : (this.get("rest.host") as string | undefined) || "localhost";
+      const restPort =
+        port !== undefined
+          ? port
+          : (this.get("rest.port") as number | undefined) || 0;
+      const restHost =
+        host !== undefined
+          ? host
+          : (this.get("rest.host") as string | undefined) || "localhost";
       const internalApp = this as IScorpionAppInternal<AppServices>;
 
       try {
-        this.httpServer = await startRestServer(internalApp, restPort, restHost);
+        this.httpServer = await startRestServer(
+          internalApp,
+          restPort,
+          restHost
+        );
         return this.httpServer;
       } catch (error) {
-        console.error("[ScorpionApp] Error during app.listen while starting REST server:", error);
+        console.error(
+          "[ScorpionApp] Error during app.listen while starting REST server:",
+          error
+        );
         this.httpServer = undefined;
         return undefined; // Propagate that server didn't start
       }
     } else {
-      console.warn("[ScorpionApp] REST transport not configured. Server not started.");
+      console.warn(
+        "[ScorpionApp] REST transport not configured. Server not started."
+      );
       return undefined;
     }
   }
@@ -914,7 +1050,7 @@ implements IScorpionAppInternal<AppServices> {
         service: undefined as any,
         path,
         method: method as string,
-        type: 'error',
+        type: "error",
         params: { ...params },
         data,
         id,
@@ -940,7 +1076,7 @@ implements IScorpionAppInternal<AppServices> {
       _rawService: rawService,
       path,
       method: method as string,
-      type: 'before',
+      type: "before",
       params: { ...params },
       data,
       id,
@@ -962,10 +1098,10 @@ implements IScorpionAppInternal<AppServices> {
     // If the call was successful, emit an event
     if (!finalContext.error && finalContext.result) {
       const standardMethodEvents: Record<string, string> = {
-        create: 'created',
-        update: 'updated',
-        patch: 'patched',
-        remove: 'removed',
+        create: "created",
+        update: "updated",
+        patch: "patched",
+        remove: "removed",
       };
 
       // Create event context
@@ -983,7 +1119,7 @@ implements IScorpionAppInternal<AppServices> {
       // For custom methods, use the method name with 'ed' suffix as event name if it's a string
       // Otherwise, don't generate an automatic event name
       const customEventName =
-        typeof method === 'string' ? `${method}ed` : undefined;
+        typeof method === "string" ? `${method}ed` : undefined;
 
       // Determine which event name to use
       const eventName = standardEventName || customEventName;
@@ -992,7 +1128,7 @@ implements IScorpionAppInternal<AppServices> {
       const eventData = finalContext.result;
 
       // Emit event on the service if it has an emit method
-      if (typeof (serviceInstance as any).emit === 'function' && eventName) {
+      if (typeof (serviceInstance as any).emit === "function" && eventName) {
         console.log(`Emitting event: ${eventName}`);
         (serviceInstance as any).emit(eventName, eventData, eventContext);
       }
@@ -1024,121 +1160,6 @@ implements IScorpionAppInternal<AppServices> {
       interceptorHooks,
       serviceHooks
     );
-  }
-
-  /**
-   * Unregister (unuse) a service from the application.
-   * This removes the service from the registry, cleans up any hooks associated with it,
-   * removes all routes that were created for it, and cleans up any event listeners.
-   * If the service has a teardown method, it will be called to allow for custom cleanup.
-   *
-   * The following cleanup operations are performed:
-   * - All HTTP routes (standard and custom) are removed
-   * - Service-specific hooks are detached
-   * - Global hooks targeting this service are filtered out
-   * - All event listeners registered by this service are removed
-   * - The service's teardown() method is called if it exists
-   *
-   * @param path The path of the service to unuse
-   * @returns The removed service instance
-   * @throws Error if the service is not found.
-   */
-  public unuse<Svc extends Service<this> = Service<this>>(path: string): Svc {
-    // Check if the service exists
-    if (!this._services[path]) {
-      throw new Error(`Service on path '${path}' not found.`);
-    }
-
-    console.log(`Unregistering service on path '${path}'`);
-
-    // Get the service instance before removing it
-    const service = this._services[path];
-    const rawService = this._rawServices[path] as Svc;
-
-    // Allow service to clean up if it has a teardown method
-    // Teardown should be called on the raw service instance.
-    if (rawService && typeof (rawService as any).teardown === "function") {
-      try {
-        (rawService as any).teardown();
-      } catch (error) {
-        console.error(`Error during teardown of service '${path}':`, error);
-      }
-    }
-
-    // We'll use the _buildRoutePath method for route path construction
-
-    // Remove all routes associated with this service
-    // Standard methods
-    const standardMethods = [
-      { name: "find", httpMethod: "GET", segment: "" },
-      { name: "get", httpMethod: "GET", segment: ":id" },
-      { name: "create", httpMethod: "POST", segment: "" },
-      { name: "update", httpMethod: "PUT", segment: ":id" },
-      { name: "patch", httpMethod: "PATCH", segment: ":id" },
-      { name: "remove", httpMethod: "DELETE", segment: ":id" },
-    ];
-
-    // Remove standard method routes
-    for (const method of standardMethods) {
-      if (typeof (service as any)[method.name] === "function") {
-        const fullRoutePath = this._buildRoutePath(path, method.segment);
-        console.log(`Removing route: ${method.httpMethod} ${fullRoutePath}`);
-        removeRoute(this._router, method.httpMethod, fullRoutePath);
-      }
-    }
-
-    // Remove custom method routes
-    for (const methodName in service) {
-      if (
-        typeof (service as any)[methodName] === "function" &&
-        !methodName.startsWith("_") &&
-        !standardMethods.some((m) => m.name === methodName)
-      ) {
-        const fullRoutePath = this._buildRoutePath(path, methodName);
-        console.log(`Removing route: POST ${fullRoutePath}`);
-        removeRoute(this._router, "POST", fullRoutePath);
-      }
-    }
-
-    // Remove service-specific hooks
-    delete this.serviceHooks[path];
-
-    // Clean up service-specific event listeners
-    if (this.serviceEventListeners[path]) {
-      console.log(`Cleaning up event listeners for service '${path}'`);
-      for (const { event, listener } of this.serviceEventListeners[path]) {
-        this.off(event, listener);
-      }
-      delete this.serviceEventListeners[path];
-    }
-
-    // Store the raw service instance to be returned
-    const removedService = rawService;
-
-    // Remove the service from the registry
-    delete this._services[path];
-    delete this._rawServices[path];
-
-    // Filter out any interceptor hooks that specifically target this service
-
-    this.interceptorGlobalHooks = this.interceptorGlobalHooks.filter((hook) => {
-      // Keep hooks with wildcard pattern
-      if (hook.servicePathPattern === "*") return true;
-
-      // Keep hooks that don't match this service path
-      if (
-        hook.servicePathPattern &&
-        typeof hook.servicePathPattern === "string"
-      ) {
-        return !this._isPathMatch(path, hook.servicePathPattern);
-      }
-
-      // Default to keeping the hook if we can't determine
-      return true;
-    });
-
-    // Return the removed service instance
-    return removedService as Svc;
   }
 
   /**
