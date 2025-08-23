@@ -69,7 +69,7 @@ A developer using ScorpionJS would expect:
         *   [x] Integrate schema validation hooks for request data/query.
         *   [x] Add REST transport configuration (port, host, CORS, body parser options, compression).
         *   [x] *Ensure transport can dynamically add/remove routes when services are registered/unregistered.*
-        *   [] *Advanced routing capabilities: support for nested routes, path parameter constraints, route specificity, and conflict resolution strategies.*
+        *   [ ] *Advanced routing capabilities: support for nested routes, path parameter constraints, route specificity, and conflict resolution strategies.*
 
     - [x] **9. Event System Core Implementation:**
         *   [x] Implement core EventEmitter-based event system for services.

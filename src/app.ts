@@ -799,23 +799,23 @@ export class ScorpionApp<
   /**
    * Registers hooks for services matching a path pattern using a structured configuration object.
    *
-   * @param pathPattern A glob-like pattern for service paths (e.g., '/api/v1/*', 'users').
+   * @param pathPattern A glob-like pattern for service paths (e.g., '/api/v1/*', 'users') or RegExp.
    * @param config The hook configuration object.
    * @returns The ScorpionApp instance for chaining.
    */
   public hooks(
-    pathPattern: string,
+    pathPattern: string | RegExp,
     config: HooksApiConfig<this, Service<this>>
   ): this;
   public hooks(
-    arg1: string | HooksApiConfig<this, Service<this> | undefined>,
+    arg1: string | RegExp | HooksApiConfig<this, Service<this> | undefined>,
     arg2?: HooksApiConfig<this, Service<this>>
   ): this {
     // Determine if this is a global hook registration or a path-specific hook registration
-    const isGlobalHookRegistration = typeof arg1 !== "string";
+    const isGlobalHookRegistration = typeof arg1 !== "string" && !(arg1 instanceof RegExp);
 
     // Extract parameters based on call pattern
-    const servicePathPattern = isGlobalHookRegistration ? "*" : arg1;
+    const servicePathPattern = isGlobalHookRegistration ? "*" : arg1 as string | RegExp;
 
     // Validate configuration
     if (isGlobalHookRegistration) {
@@ -848,15 +848,16 @@ export class ScorpionApp<
       }
 
       // Process service-specific hooks
-      if (!this.serviceHooks[servicePathPattern]) {
-        this.serviceHooks[servicePathPattern] = [];
+      const patternKey = servicePathPattern.toString();
+      if (!this.serviceHooks[patternKey]) {
+        this.serviceHooks[patternKey] = [];
       }
 
       this._processHookConfig<Service<this>>(
         config,
         servicePathPattern,
-        this.serviceHooks[servicePathPattern],
-        `[ScorpionApp.hooks] Service '${servicePathPattern}'`
+        this.serviceHooks[patternKey],
+        `[ScorpionApp.hooks] Service '${patternKey}'`
       );
     }
 
@@ -885,21 +886,21 @@ export class ScorpionApp<
     config: HooksApiConfig<this, Service<this> | undefined>
   ): this;
   public interceptorHooks(
-    arg1: string | HooksApiConfig<this, Service<this> | undefined>,
+    arg1: string | RegExp | HooksApiConfig<this, Service<this> | undefined>,
     arg2?: HooksApiConfig<this, Service<this> | undefined>
   ): this {
     // Determine if this is a global interceptor registration or a path-specific registration
-    const isGlobalRegistration = typeof arg1 !== "string";
+    const isGlobalRegistration = typeof arg1 !== "string" && !(arg1 instanceof RegExp);
 
     // Extract parameters based on call pattern
-    const servicePathPattern = isGlobalRegistration ? "*" : arg1;
+    const servicePathPattern = isGlobalRegistration ? "*" : arg1 as string | RegExp;
     const config = isGlobalRegistration ? arg1 : arg2;
 
     // Validate configuration
     if (!config) {
       const errorMsg = isGlobalRegistration
         ? "[ScorpionApp.interceptorHooks] Hook configuration object is undefined."
-        : `[ScorpionApp.interceptorHooks] Configuration object missing for pattern '${servicePathPattern}'.`;
+        : `[ScorpionApp.interceptorHooks] Configuration object missing for pattern '${servicePathPattern.toString()}'.`;
       console.warn(errorMsg);
       return this;
     }
@@ -916,7 +917,7 @@ export class ScorpionApp<
 
   private _processHookConfig<Svc extends Service<this> | undefined>(
     config: HooksApiConfig<this, Svc>,
-    servicePathPattern: string,
+    servicePathPattern: string | RegExp,
     hooksArray: HookObject<this, Svc>[],
     errorContext: string = "[ScorpionApp.hooks]"
   ): void {
@@ -957,6 +958,21 @@ export class ScorpionApp<
         }
       }
     }
+  }
+
+  /**
+   * Helper method to check if a path matches a pattern (string glob or RegExp)
+   */
+  private _matchesPattern(text: string, pattern: string | RegExp): boolean {
+    if (pattern === undefined || pattern === null || pattern === '*') {
+      return true; // No pattern or wildcard '*' matches everything
+    }
+    if (pattern instanceof RegExp) {
+      return pattern.test(text);
+    }
+    // Simple glob to RegExp conversion (handles '*' only)
+    const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+    return regex.test(text);
   }
 
   /**
@@ -1085,7 +1101,37 @@ export class ScorpionApp<
     };
 
     // Get applicable hooks for this service call
-    const serviceHooks = this.serviceHooks[path] || [];
+    const serviceHooks: HookObject<this, Service<this>>[] = [];
+    
+    // Check exact match first
+    if (this.serviceHooks[path]) {
+      serviceHooks.push(...this.serviceHooks[path]);
+    }
+    
+    // Check pattern matches
+    for (const [patternKey, hooks] of Object.entries(this.serviceHooks)) {
+      if (patternKey !== path) { // Skip exact matches (already added above)
+        // Try to parse as RegExp if it looks like one
+        let pattern: string | RegExp = patternKey;
+        if (patternKey.startsWith('/') && patternKey.includes('/')) {
+          try {
+            // Extract RegExp from string representation
+            const match = patternKey.match(/^\/(.*)\/([gimuy]*)$/);
+            if (match) {
+              pattern = new RegExp(match[1], match[2]);
+            }
+          } catch (e) {
+            // If parsing fails, treat as string pattern
+          }
+        }
+        
+        // Use the same matching logic as in hooks.ts
+        const matches = this._matchesPattern(path, pattern);
+        if (matches) {
+          serviceHooks.push(...hooks);
+        }
+      }
+    }
 
     // Execute all hooks
     const finalContext = await this.executeHooks(
