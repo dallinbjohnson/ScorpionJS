@@ -40,9 +40,9 @@ export class ScorpionApp extends EventEmitter {
         const methods = new Set();
         let current = obj;
         do {
-            Object.getOwnPropertyNames(current).forEach(name => {
+            Object.getOwnPropertyNames(current).forEach((name) => {
                 // Check if the property is a function and not an ES6 class constructor
-                if (typeof current[name] === 'function' && name !== 'constructor') {
+                if (typeof current[name] === "function" && name !== "constructor") {
                     methods.add(name);
                 }
             });
@@ -74,11 +74,7 @@ export class ScorpionApp extends EventEmitter {
                 cors: {
                     origin: "*",
                     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-                    allowedHeaders: [
-                        "Content-Type",
-                        "Authorization",
-                        "X-Requested-With",
-                    ],
+                    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
                     credentials: true,
                     optionsSuccessStatus: 204,
                 },
@@ -98,7 +94,8 @@ export class ScorpionApp extends EventEmitter {
                 cors: {
                     origin: "*", // Typically, WebSocket CORS is handled by the HTTP upgrade request
                 },
-                serverOptions: { // Defaults for 'ws' library
+                serverOptions: {
+                // Defaults for 'ws' library
                 // perMessageDeflate: {
                 //   zlibDeflateOptions: {
                 //     chunkSize: 1024,
@@ -114,7 +111,7 @@ export class ScorpionApp extends EventEmitter {
                 //   concurrencyLimit: 10, // Limits zlib concurrency for perf.
                 //   threshold: 1024 // Size (in bytes) below which messages
                 // }
-                }
+                },
             },
             logging: {
                 level: process.env.NODE_ENV === "production" ? "info" : "debug",
@@ -287,14 +284,27 @@ export class ScorpionApp extends EventEmitter {
         const lastPart = parts[parts.length - 1];
         current[lastPart] = value;
     }
+    /**
+     * Retrieves a service registered at the given path.
+     * Throws an error if the service doesn't exist.
+     *
+     * The returned service is guaranteed to have hooks, emit, on, and off methods
+     * as they are added during registration via app.use().
+     *
+     * @param path The path of the service to retrieve (e.g., 'messages').
+     * @returns The registered service instance with guaranteed hooks method.
+     */
     service(path) {
         const service = this._services[path];
-        if (!service) {
+        if (!this._serviceExists(service, path)) {
             throw new Error(`Service on path '${path}' not found.`);
         }
         // The service has been enhanced with hooks, emit, on, and off methods during registration
-        // so we can safely assert it as a RegisteredService & Svc
+        // TypeScript now knows service is definitely not undefined after the type guard
         return service;
+    }
+    _serviceExists(service, path) {
+        return service !== undefined;
     }
     /**
      * Registers a service on a given path.
@@ -513,7 +523,7 @@ export class ScorpionApp extends EventEmitter {
                     httpMethod,
                     servicePath: path,
                     serviceMethodName: methodName,
-                    service: serviceProxy
+                    service: serviceProxy,
                 });
             }
         }
@@ -529,234 +539,6 @@ export class ScorpionApp extends EventEmitter {
         // Store the proxy in the service registry
         this._services[path] = serviceProxy;
         return this;
-    }
-    hooks(arg1, arg2) {
-        // Determine if this is a global hook registration or a path-specific hook registration
-        const isGlobalHookRegistration = typeof arg1 !== "string";
-        // Extract parameters based on call pattern
-        const servicePathPattern = isGlobalHookRegistration ? "*" : arg1;
-        // Validate configuration
-        if (isGlobalHookRegistration) {
-            // Global hooks case
-            const config = arg1;
-            if (!config) {
-                console.warn("[ScorpionApp.hooks] Error: Global hook configuration object is undefined.");
-                return this;
-            }
-            // Process global hooks with explicit typing
-            this._processHookConfig(config, servicePathPattern, this.globalHooks, "[ScorpionApp.hooks] Global");
-        }
-        else {
-            // Service-specific hooks case
-            const config = arg2;
-            if (!config) {
-                console.warn(`[ScorpionApp.hooks] Error: Configuration object missing for path pattern '${servicePathPattern}'.`);
-                return this;
-            }
-            // Process service-specific hooks
-            if (!this.serviceHooks[servicePathPattern]) {
-                this.serviceHooks[servicePathPattern] = [];
-            }
-            this._processHookConfig(config, servicePathPattern, this.serviceHooks[servicePathPattern], `[ScorpionApp.hooks] Service '${servicePathPattern}'`);
-        }
-        return this;
-    }
-    interceptorHooks(arg1, arg2) {
-        // Determine if this is a global interceptor registration or a path-specific registration
-        const isGlobalRegistration = typeof arg1 !== "string";
-        // Extract parameters based on call pattern
-        const servicePathPattern = isGlobalRegistration ? "*" : arg1;
-        const config = isGlobalRegistration ? arg1 : arg2;
-        // Validate configuration
-        if (!config) {
-            const errorMsg = isGlobalRegistration
-                ? "[ScorpionApp.interceptorHooks] Hook configuration object is undefined."
-                : `[ScorpionApp.interceptorHooks] Configuration object missing for pattern '${servicePathPattern}'.`;
-            console.warn(errorMsg);
-            return this;
-        }
-        // Process interceptor hooks
-        this._processHookConfig(config, servicePathPattern, this.interceptorGlobalHooks, "[ScorpionApp.interceptorHooks]");
-        return this;
-    }
-    _processHookConfig(config, servicePathPattern, hooksArray, errorContext = "[ScorpionApp.hooks]") {
-        const hookTypesToProcess = [
-            "before",
-            "after",
-            "error",
-            "around",
-        ];
-        for (const hookType of hookTypesToProcess) {
-            const methodConfig = config[hookType];
-            if (methodConfig) {
-                for (const methodName in methodConfig) {
-                    if (Object.prototype.hasOwnProperty.call(methodConfig, methodName)) {
-                        const configEntry = methodConfig[methodName];
-                        if (configEntry) {
-                            const fns = Array.isArray(configEntry)
-                                ? configEntry
-                                : [configEntry];
-                            for (const fn of fns) {
-                                if (typeof fn !== "function") {
-                                    console.warn(`${errorContext} Expected a hook function for ${hookType}.${methodName}, but got ${typeof fn}. Skipping.`);
-                                    continue;
-                                }
-                                const hookObject = {
-                                    type: hookType,
-                                    fn: fn, // fn is already StandardHookFunction or AroundHookFunction
-                                    servicePathPattern: servicePathPattern,
-                                    methodPattern: methodName === "all" ? "*" : methodName,
-                                };
-                                hooksArray.push(hookObject);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    /**
-     * Gets a configuration value at the specified path.
-     *
-     * @param path The dot-notation path to the configuration value.
-     * @returns The configuration value at the specified path.
-     */
-    get(path) {
-        return this._getConfigValue(path);
-    }
-    /**
-     * Sets a configuration value at the specified path.
-     *
-     * @param path The dot-notation path to set the configuration value at.
-     * @param value The value to set.
-     * @returns The ScorpionApp instance for chaining.
-     */
-    set(path, value) {
-        this._setConfigValue(path, value);
-        return this;
-    }
-    /**
-     * Configures the application with a plugin function.
-     *
-     * @param fn The plugin function to apply.
-     * @returns The ScorpionApp instance for chaining.
-     */
-    configure(fn) {
-        fn(this);
-        return this;
-    }
-    async listen(port, host) {
-        if (this.get("rest.enabled")) {
-            const restPort = port !== undefined ? port : this.get("rest.port") || 0;
-            const restHost = host !== undefined ? host : this.get("rest.host") || "localhost";
-            const internalApp = this;
-            try {
-                this.httpServer = await startRestServer(internalApp, restPort, restHost);
-                return this.httpServer;
-            }
-            catch (error) {
-                console.error("[ScorpionApp] Error during app.listen while starting REST server:", error);
-                this.httpServer = undefined;
-                return undefined; // Propagate that server didn't start
-            }
-        }
-        else {
-            console.warn("[ScorpionApp] REST transport not configured. Server not started.");
-            return undefined;
-        }
-    }
-    /**
-     * Execute a service method with all applicable hooks.
-     *
-     * @param options Options for the service call including path, method, params, data, and id
-     * @returns The final hook context after all hooks have executed
-     */
-    async executeServiceCall(options) {
-        const { path, method, params = {}, data, id } = options;
-        const serviceInstance = this._services[path];
-        // Handle case where service is not found
-        if (!serviceInstance) {
-            // Create error context and run only global and interceptor hooks
-            const errorContext = {
-                app: this,
-                service: undefined,
-                path,
-                method: method,
-                type: 'error',
-                params: { ...params },
-                data,
-                id,
-                result: undefined,
-                error: new NotFound(`Service on path '${path}' not found.`),
-            };
-            // Run hooks with empty service-specific hooks array
-            return runHooks(errorContext, this.globalHooks, this.interceptorGlobalHooks || [], []);
-        }
-        // Create initial context for hook execution
-        const rawService = this._rawServices[path];
-        const initialContext = {
-            app: this,
-            service: serviceInstance,
-            _rawService: rawService,
-            path,
-            method: method,
-            type: 'before',
-            params: { ...params },
-            data,
-            id,
-            result: undefined,
-            error: undefined,
-        };
-        // Get applicable hooks for this service call
-        const serviceHooks = this.serviceHooks[path] || [];
-        // Execute all hooks
-        const finalContext = await this.executeHooks(initialContext, this.globalHooks, this.interceptorGlobalHooks || [], serviceHooks);
-        // If the call was successful, emit an event
-        if (!finalContext.error && finalContext.result) {
-            const standardMethodEvents = {
-                create: 'created',
-                update: 'updated',
-                patch: 'patched',
-                remove: 'removed',
-            };
-            // Create event context
-            const eventContext = {
-                service: serviceInstance,
-                method: method,
-                path: path,
-                result: finalContext.result,
-                params: finalContext.params,
-            };
-            // For standard methods, use the predefined event name
-            const standardEventName = standardMethodEvents[method];
-            // For custom methods, use the method name with 'ed' suffix as event name if it's a string
-            // Otherwise, don't generate an automatic event name
-            const customEventName = typeof method === 'string' ? `${method}ed` : undefined;
-            // Determine which event name to use
-            const eventName = standardEventName || customEventName;
-            // The event data is the result of the method call
-            const eventData = finalContext.result;
-            // Emit event on the service if it has an emit method
-            if (typeof serviceInstance.emit === 'function' && eventName) {
-                console.log(`Emitting event: ${eventName}`);
-                serviceInstance.emit(eventName, eventData, eventContext);
-            }
-        }
-        // Return the final context
-        return finalContext;
-    }
-    /**
-     * Execute all applicable hooks for a given context.
-     * Delegates to the runHooks function from hooks.ts.
-     *
-     * @param initialContext The initial hook context
-     * @param globalHooks Global hooks to apply
-     * @param interceptorHooks Interceptor hooks to apply
-     * @param serviceHooks Service-specific hooks to apply
-     * @returns The final hook context after all hooks have executed
-     */
-    async executeHooks(initialContext, globalHooks, interceptorHooks, serviceHooks) {
-        return runHooks(initialContext, globalHooks, interceptorHooks, serviceHooks);
     }
     /**
      * Unregister (unuse) a service from the application.
@@ -853,6 +635,281 @@ export class ScorpionApp extends EventEmitter {
         });
         // Return the removed service instance
         return removedService;
+    }
+    hooks(arg1, arg2) {
+        // Determine if this is a global hook registration or a path-specific hook registration
+        const isGlobalHookRegistration = typeof arg1 !== "string" && !(arg1 instanceof RegExp);
+        // Extract parameters based on call pattern
+        const servicePathPattern = isGlobalHookRegistration ? "*" : arg1;
+        // Validate configuration
+        if (isGlobalHookRegistration) {
+            // Global hooks case
+            const config = arg1;
+            if (!config) {
+                console.warn("[ScorpionApp.hooks] Error: Global hook configuration object is undefined.");
+                return this;
+            }
+            // Process global hooks with explicit typing
+            this._processHookConfig(config, servicePathPattern, this.globalHooks, "[ScorpionApp.hooks] Global");
+        }
+        else {
+            // Service-specific hooks case
+            const config = arg2;
+            if (!config) {
+                console.warn(`[ScorpionApp.hooks] Error: Configuration object missing for path pattern '${servicePathPattern}'.`);
+                return this;
+            }
+            // Process service-specific hooks
+            const patternKey = servicePathPattern.toString();
+            if (!this.serviceHooks[patternKey]) {
+                this.serviceHooks[patternKey] = [];
+            }
+            this._processHookConfig(config, servicePathPattern, this.serviceHooks[patternKey], `[ScorpionApp.hooks] Service '${patternKey}'`);
+        }
+        return this;
+    }
+    interceptorHooks(arg1, arg2) {
+        // Determine if this is a global interceptor registration or a path-specific registration
+        const isGlobalRegistration = typeof arg1 !== "string" && !(arg1 instanceof RegExp);
+        // Extract parameters based on call pattern
+        const servicePathPattern = isGlobalRegistration ? "*" : arg1;
+        const config = isGlobalRegistration ? arg1 : arg2;
+        // Validate configuration
+        if (!config) {
+            const errorMsg = isGlobalRegistration
+                ? "[ScorpionApp.interceptorHooks] Hook configuration object is undefined."
+                : `[ScorpionApp.interceptorHooks] Configuration object missing for pattern '${servicePathPattern.toString()}'.`;
+            console.warn(errorMsg);
+            return this;
+        }
+        // Process interceptor hooks
+        this._processHookConfig(config, servicePathPattern, this.interceptorGlobalHooks, "[ScorpionApp.interceptorHooks]");
+        return this;
+    }
+    _processHookConfig(config, servicePathPattern, hooksArray, errorContext = "[ScorpionApp.hooks]") {
+        const hookTypesToProcess = [
+            "before",
+            "after",
+            "error",
+            "around",
+        ];
+        for (const hookType of hookTypesToProcess) {
+            const methodConfig = config[hookType];
+            if (methodConfig) {
+                for (const methodName in methodConfig) {
+                    if (Object.prototype.hasOwnProperty.call(methodConfig, methodName)) {
+                        const configEntry = methodConfig[methodName];
+                        if (configEntry) {
+                            const fns = Array.isArray(configEntry)
+                                ? configEntry
+                                : [configEntry];
+                            for (const fn of fns) {
+                                if (typeof fn !== "function") {
+                                    console.warn(`${errorContext} Expected a hook function for ${hookType}.${methodName}, but got ${typeof fn}. Skipping.`);
+                                    continue;
+                                }
+                                const hookObject = {
+                                    type: hookType,
+                                    fn: fn, // fn is already StandardHookFunction or AroundHookFunction
+                                    servicePathPattern: servicePathPattern,
+                                    methodPattern: methodName === "all" ? "*" : methodName,
+                                };
+                                hooksArray.push(hookObject);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    /**
+     * Helper method to check if a path matches a pattern (string glob or RegExp)
+     */
+    _matchesPattern(text, pattern) {
+        if (pattern === undefined || pattern === null || pattern === '*') {
+            return true; // No pattern or wildcard '*' matches everything
+        }
+        if (pattern instanceof RegExp) {
+            return pattern.test(text);
+        }
+        // Simple glob to RegExp conversion (handles '*' only)
+        const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+        return regex.test(text);
+    }
+    /**
+     * Gets a configuration value at the specified path.
+     *
+     * @param path The dot-notation path to the configuration value.
+     * @returns The configuration value at the specified path.
+     */
+    get(path) {
+        return this._getConfigValue(path);
+    }
+    /**
+     * Sets a configuration value at the specified path.
+     *
+     * @param path The dot-notation path to set the configuration value at.
+     * @param value The value to set.
+     * @returns The ScorpionApp instance for chaining.
+     */
+    set(path, value) {
+        this._setConfigValue(path, value);
+        return this;
+    }
+    /**
+     * Configures the application with a plugin function.
+     *
+     * @param fn The plugin function to apply.
+     * @returns The ScorpionApp instance for chaining.
+     */
+    configure(fn) {
+        fn(this);
+        return this;
+    }
+    async listen(port, host) {
+        if (this.get("rest.enabled")) {
+            const restPort = port !== undefined
+                ? port
+                : this.get("rest.port") || 0;
+            const restHost = host !== undefined
+                ? host
+                : this.get("rest.host") || "localhost";
+            const internalApp = this;
+            try {
+                this.httpServer = await startRestServer(internalApp, restPort, restHost);
+                return this.httpServer;
+            }
+            catch (error) {
+                console.error("[ScorpionApp] Error during app.listen while starting REST server:", error);
+                this.httpServer = undefined;
+                return undefined; // Propagate that server didn't start
+            }
+        }
+        else {
+            console.warn("[ScorpionApp] REST transport not configured. Server not started.");
+            return undefined;
+        }
+    }
+    /**
+     * Execute a service method with all applicable hooks.
+     *
+     * @param options Options for the service call including path, method, params, data, and id
+     * @returns The final hook context after all hooks have executed
+     */
+    async executeServiceCall(options) {
+        const { path, method, params = {}, data, id } = options;
+        const serviceInstance = this._services[path];
+        // Handle case where service is not found
+        if (!serviceInstance) {
+            // Create error context and run only global and interceptor hooks
+            const errorContext = {
+                app: this,
+                service: undefined,
+                path,
+                method: method,
+                type: "error",
+                params: { ...params },
+                data,
+                id,
+                result: undefined,
+                error: new NotFound(`Service on path '${path}' not found.`),
+            };
+            // Run hooks with empty service-specific hooks array
+            return runHooks(errorContext, this.globalHooks, this.interceptorGlobalHooks || [], []);
+        }
+        // Create initial context for hook execution
+        const rawService = this._rawServices[path];
+        const initialContext = {
+            app: this,
+            service: serviceInstance,
+            _rawService: rawService,
+            path,
+            method: method,
+            type: "before",
+            params: { ...params },
+            data,
+            id,
+            result: undefined,
+            error: undefined,
+        };
+        // Get applicable hooks for this service call
+        const serviceHooks = [];
+        // Check exact match first
+        if (this.serviceHooks[path]) {
+            serviceHooks.push(...this.serviceHooks[path]);
+        }
+        // Check pattern matches
+        for (const [patternKey, hooks] of Object.entries(this.serviceHooks)) {
+            if (patternKey !== path) { // Skip exact matches (already added above)
+                // Try to parse as RegExp if it looks like one
+                let pattern = patternKey;
+                if (patternKey.startsWith('/') && patternKey.includes('/')) {
+                    try {
+                        // Extract RegExp from string representation
+                        const match = patternKey.match(/^\/(.*)\/([gimuy]*)$/);
+                        if (match) {
+                            pattern = new RegExp(match[1], match[2]);
+                        }
+                    }
+                    catch (e) {
+                        // If parsing fails, treat as string pattern
+                    }
+                }
+                // Use the same matching logic as in hooks.ts
+                const matches = this._matchesPattern(path, pattern);
+                if (matches) {
+                    serviceHooks.push(...hooks);
+                }
+            }
+        }
+        // Execute all hooks
+        const finalContext = await this.executeHooks(initialContext, this.globalHooks, this.interceptorGlobalHooks || [], serviceHooks);
+        // If the call was successful, emit an event
+        if (!finalContext.error && finalContext.result) {
+            const standardMethodEvents = {
+                create: "created",
+                update: "updated",
+                patch: "patched",
+                remove: "removed",
+            };
+            // Create event context
+            const eventContext = {
+                service: serviceInstance,
+                method: method,
+                path: path,
+                result: finalContext.result,
+                params: finalContext.params,
+            };
+            // For standard methods, use the predefined event name
+            const standardEventName = standardMethodEvents[method];
+            // For custom methods, use the method name with 'ed' suffix as event name if it's a string
+            // Otherwise, don't generate an automatic event name
+            const customEventName = typeof method === "string" ? `${method}ed` : undefined;
+            // Determine which event name to use
+            const eventName = standardEventName || customEventName;
+            // The event data is the result of the method call
+            const eventData = finalContext.result;
+            // Emit event on the service if it has an emit method
+            if (typeof serviceInstance.emit === "function" && eventName) {
+                console.log(`Emitting event: ${eventName}`);
+                serviceInstance.emit(eventName, eventData, eventContext);
+            }
+        }
+        // Return the final context
+        return finalContext;
+    }
+    /**
+     * Execute all applicable hooks for a given context.
+     * Delegates to the runHooks function from hooks.ts.
+     *
+     * @param initialContext The initial hook context
+     * @param globalHooks Global hooks to apply
+     * @param interceptorHooks Interceptor hooks to apply
+     * @param serviceHooks Service-specific hooks to apply
+     * @returns The final hook context after all hooks have executed
+     */
+    async executeHooks(initialContext, globalHooks, interceptorHooks, serviceHooks) {
+        return runHooks(initialContext, globalHooks, interceptorHooks, serviceHooks);
     }
     /**
      * Publish an event with data and optional context using the app's custom event signature.

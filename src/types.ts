@@ -197,7 +197,7 @@ export interface IScorpionApp<AppServices extends Record<string, Service<any>> =
 
   // Service registration
   use<S extends Service<any>>(path: string, service: S, options?: ServiceOptions): this;
-  service(path: string): RegisteredService<any, any, any>;
+  service(path: string): RegisteredService<any, any>;
 
   // Server methods
   listen(port?: number, host?: string, callback?: () => void): Promise<http.Server | undefined>;
@@ -294,15 +294,15 @@ export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = an
 
 /**
  * Represents a service that has been registered with the app via app.use().
- * This extends the base Service interface but guarantees that certain methods
+ * This extends the original service type but guarantees that certain methods
  * like hooks() are always available, as they are added during registration.
  */
-export interface RegisteredService<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> extends Service<A, T, D> {
+export type RegisteredService<A extends IScorpionApp<any> = IScorpionApp<any>, S extends Service<A> = Service<A>> = S & {
   // These methods are guaranteed to exist after service registration
-  hooks(config: HooksApiConfig<IScorpionApp<any>, Service<IScorpionApp<any>>>): this;
-  emit(event: string, data: any, context?: any): this;
-  on(event: string, listener: (...args: any[]) => void): this;
-  off(event: string, listener: (...args: any[]) => void): this;
+  hooks(config: HooksApiConfig<A, S>): RegisteredService<A, S>;
+  emit(event: string, data: any, context?: any): RegisteredService<A, S>;
+  on(event: string, listener: (...args: any[]) => void): RegisteredService<A, S>;
+  off(event: string, listener: (...args: any[]) => void): RegisteredService<A, S>;
 }
 
 /**
@@ -374,7 +374,7 @@ export interface HooksApiConfig<
 
 export interface HookContext<A extends IScorpionApp<any> = IScorpionApp<any>, S extends Service<A> | undefined = undefined> {
   app: IScorpionApp<any>; // The app instance, typed broadly for covariance in HookContext
-  service?: RegisteredService<A, any, any>; // The proxied, registered service instance
+  service?: RegisteredService<A, Service<A>>; // The proxied, registered service instance
   _rawService?: S; // The raw, un-proxied service instance
   path: string; // Path of the service being called
   method?: string; 

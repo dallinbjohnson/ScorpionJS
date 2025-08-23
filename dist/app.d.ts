@@ -64,8 +64,8 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
      * @param path The path of the service to retrieve (e.g., 'messages').
      * @returns The registered service instance with guaranteed hooks method.
      */
-    service<SvcPath extends keyof AppServices>(path: SvcPath): RegisteredService<this, any, any>;
-    service<SvcType extends Service<this> = Service<this>>(path: string): RegisteredService<this, any, any>;
+    service<SvcType extends Service<this> = Service<this>>(path: string): RegisteredService<this, SvcType>;
+    private _serviceExists;
     /**
      * Registers a service on a given path.
      *
@@ -77,6 +77,24 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
     use<SvcType extends Service<this>>(path: string, service: SvcType, // service is now non-optional for registration
     options?: ServiceOptions<this, SvcType>): this;
     /**
+     * Unregister (unuse) a service from the application.
+     * This removes the service from the registry, cleans up any hooks associated with it,
+     * removes all routes that were created for it, and cleans up any event listeners.
+     * If the service has a teardown method, it will be called to allow for custom cleanup.
+     *
+     * The following cleanup operations are performed:
+     * - All HTTP routes (standard and custom) are removed
+     * - Service-specific hooks are detached
+     * - Global hooks targeting this service are filtered out
+     * - All event listeners registered by this service are removed
+     * - The service's teardown() method is called if it exists
+     *
+     * @param path The path of the service to unuse
+     * @returns The removed service instance
+     * @throws Error if the service is not found.
+     */
+    unuse<Svc extends Service<this> = Service<this>>(path: string): Svc;
+    /**
      * Registers global hooks using a structured configuration object.
      *
      * @param config The hook configuration object.
@@ -86,11 +104,11 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
     /**
      * Registers hooks for services matching a path pattern using a structured configuration object.
      *
-     * @param pathPattern A glob-like pattern for service paths (e.g., '/api/v1/*', 'users').
+     * @param pathPattern A glob-like pattern for service paths (e.g., '/api/v1/*', 'users') or RegExp.
      * @param config The hook configuration object.
      * @returns The ScorpionApp instance for chaining.
      */
-    hooks(pathPattern: string, config: HooksApiConfig<this, Service<this>>): this;
+    hooks(pathPattern: string | RegExp, config: HooksApiConfig<this, Service<this>>): this;
     /**
      * Registers global interceptor hooks using a structured configuration object.
      * Interceptor hooks run between standard global hooks and service-specific hooks.
@@ -108,6 +126,10 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
      */
     interceptorHooks(pathPattern: string, config: HooksApiConfig<this, Service<this> | undefined>): this;
     private _processHookConfig;
+    /**
+     * Helper method to check if a path matches a pattern (string glob or RegExp)
+     */
+    private _matchesPattern;
     /**
      * Gets a configuration value at the specified path.
      *
@@ -149,24 +171,6 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
      * @returns The final hook context after all hooks have executed
      */
     private executeHooks;
-    /**
-     * Unregister (unuse) a service from the application.
-     * This removes the service from the registry, cleans up any hooks associated with it,
-     * removes all routes that were created for it, and cleans up any event listeners.
-     * If the service has a teardown method, it will be called to allow for custom cleanup.
-     *
-     * The following cleanup operations are performed:
-     * - All HTTP routes (standard and custom) are removed
-     * - Service-specific hooks are detached
-     * - Global hooks targeting this service are filtered out
-     * - All event listeners registered by this service are removed
-     * - The service's teardown() method is called if it exists
-     *
-     * @param path The path of the service to unuse
-     * @returns The removed service instance
-     * @throws Error if the service is not found.
-     */
-    unuse<Svc extends Service<this> = Service<this>>(path: string): Svc;
     /**
      * Publish an event with data and optional context using the app's custom event signature.
      * This is distinct from the standard EventEmitter.emit method.

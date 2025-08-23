@@ -380,22 +380,18 @@ export class ScorpionApp<
    * @param path The path of the service to retrieve (e.g., 'messages').
    * @returns The registered service instance with guaranteed hooks method.
    */
-  public service<SvcPath extends keyof AppServices>(
-    path: SvcPath
-  ): RegisteredService<this, any, any>;
   public service<SvcType extends Service<this> = Service<this>>(
     path: string
-  ): RegisteredService<this, any, any>;
-  public service(path: string): RegisteredService<this, any, any> {
+  ): RegisteredService<this, SvcType> {
     const service = this._services[path];
 
     if (!service) {
       throw new Error(`Service on path '${path}' not found.`);
     }
 
-    // The service has been enhanced with hooks, emit, on, and off methods during registration
-    // so we can safely assert it as a RegisteredService & Svc
-    return service as RegisteredService<this, any, any>;
+    // TypeScript's control flow analysis doesn't always work with Record types
+    // We know the service exists after the check, so we can safely assert the type
+    return service as RegisteredService<this, SvcType>;
   }
 
   /**
@@ -1088,7 +1084,7 @@ export class ScorpionApp<
 
     const initialContext: HookContext<this, Svc> = {
       app: this,
-      service: serviceInstance as RegisteredService<this> | undefined,
+      service: serviceInstance as any,
       _rawService: rawService,
       path,
       method: method as string,

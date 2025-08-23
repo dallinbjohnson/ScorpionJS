@@ -147,7 +147,7 @@ export interface IScorpionApp<AppServices extends Record<string, Service<any>> =
     get<T = any>(path: string): T | undefined;
     set<T = any>(path: string, value: T): this;
     use<S extends Service<any>>(path: string, service: S, options?: ServiceOptions): this;
-    service(path: string): RegisteredService<any, any, any>;
+    service(path: string): RegisteredService<any, any>;
     listen(port?: number, host?: string, callback?: () => void): Promise<http.Server | undefined>;
     hooks(config: HooksApiConfig<any, any>): this;
     hooks(pathPattern: string, config: HooksApiConfig<any, any>): this;
@@ -217,15 +217,15 @@ export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = an
 }
 /**
  * Represents a service that has been registered with the app via app.use().
- * This extends the base Service interface but guarantees that certain methods
+ * This extends the original service type but guarantees that certain methods
  * like hooks() are always available, as they are added during registration.
  */
-export interface RegisteredService<A extends IScorpionApp<any> = IScorpionApp<any>, T = any, D = Partial<T>> extends Service<A, T, D> {
-    hooks(config: HooksApiConfig<IScorpionApp<any>, Service<IScorpionApp<any>>>): this;
-    emit(event: string, data: any, context?: any): this;
-    on(event: string, listener: (...args: any[]) => void): this;
-    off(event: string, listener: (...args: any[]) => void): this;
-}
+export type RegisteredService<A extends IScorpionApp<any> = IScorpionApp<any>, S extends Service<A> = Service<A>> = S & {
+    hooks(config: HooksApiConfig<A, S>): RegisteredService<A, S>;
+    emit(event: string, data: any, context?: any): RegisteredService<A, S>;
+    on(event: string, listener: (...args: any[]) => void): RegisteredService<A, S>;
+    off(event: string, listener: (...args: any[]) => void): RegisteredService<A, S>;
+};
 /**
  * Options that can be passed when registering a service.
  * For now, it's a placeholder for future options like schemas.
@@ -268,7 +268,7 @@ export interface HooksApiConfig<A extends IScorpionApp<any> = IScorpionApp<any>,
 }
 export interface HookContext<A extends IScorpionApp<any> = IScorpionApp<any>, S extends Service<A> | undefined = undefined> {
     app: IScorpionApp<any>;
-    service?: RegisteredService<A, any, any>;
+    service?: RegisteredService<A, Service<A>>;
     _rawService?: S;
     path: string;
     method?: string;
