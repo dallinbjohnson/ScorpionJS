@@ -4,6 +4,7 @@ import { IScorpionAppInternal, ExecuteServiceCallOptions, RegisteredService, Ser
 import { createRouter } from "rou3";
 export declare class ScorpionApp<AppServices extends Record<string, Service<any>> = Record<string, Service<any>>> extends EventEmitter implements IScorpionAppInternal<AppServices> {
     private httpServer?;
+    private wsServer?;
     _isScorpionAppBrand: never;
     private _services;
     private _rawServices;
@@ -65,7 +66,6 @@ export declare class ScorpionApp<AppServices extends Record<string, Service<any>
      * @returns The registered service instance with guaranteed hooks method.
      */
     service<SvcType extends Service<this> = Service<this>>(path: string): RegisteredService<this, SvcType>;
-    private _serviceExists;
     /**
      * Registers a service on a given path.
      *

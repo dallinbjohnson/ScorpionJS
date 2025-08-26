@@ -13,5 +13,34 @@
       "internalConsoleOptions": "neverOpen",
       "restart": true
     },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Run tests websocket",
+      "skipFiles": ["<node_internals>/**"],
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "test:websocket"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "restart": true
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Mocha TS (ESM)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--loader=ts-node/esm"
+      ],
+      "program": "${workspaceFolder}/node_modules/mocha/lib/cli/cli.js",
+      "args": [
+        "${workspaceFolder}/test/websocket.test.ts"
+      ],
+      "console": "integratedTerminal",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    }
   ]
 }

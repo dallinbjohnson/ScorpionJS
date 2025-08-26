@@ -3,12 +3,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { NotFound } from './errors.js';
 import { startRestServer } from './rest.js';
+import { startWebSocketServer } from './websocket.js';
 import { EventEmitter } from "events";
 import { runHooks } from './hooks.js';
 import { createRouter, addRoute, removeRoute } from "rou3";
 import { registerSchemas } from "./schema.js";
 export class ScorpionApp extends EventEmitter {
     httpServer;
+    wsServer; // WebSocket server instance
     _isScorpionAppBrand;
     // A registry for all services, mapping a path to a service instance.
     _services = {};
@@ -296,15 +298,12 @@ export class ScorpionApp extends EventEmitter {
      */
     service(path) {
         const service = this._services[path];
-        if (!this._serviceExists(service, path)) {
+        if (!service) {
             throw new Error(`Service on path '${path}' not found.`);
         }
-        // The service has been enhanced with hooks, emit, on, and off methods during registration
-        // TypeScript now knows service is definitely not undefined after the type guard
+        // TypeScript's control flow analysis doesn't always work with Record types
+        // We know the service exists after the check, so we can safely assert the type
         return service;
-    }
-    _serviceExists(service, path) {
-        return service !== undefined;
     }
     /**
      * Registers a service on a given path.
@@ -767,6 +766,8 @@ export class ScorpionApp extends EventEmitter {
         return this;
     }
     async listen(port, host) {
+        const internalApp = this;
+        // Start REST server if enabled
         if (this.get("rest.enabled")) {
             const restPort = port !== undefined
                 ? port
@@ -774,21 +775,33 @@ export class ScorpionApp extends EventEmitter {
             const restHost = host !== undefined
                 ? host
                 : this.get("rest.host") || "localhost";
-            const internalApp = this;
             try {
                 this.httpServer = await startRestServer(internalApp, restPort, restHost);
-                return this.httpServer;
             }
             catch (error) {
                 console.error("[ScorpionApp] Error during app.listen while starting REST server:", error);
                 this.httpServer = undefined;
-                return undefined; // Propagate that server didn't start
             }
         }
         else {
-            console.warn("[ScorpionApp] REST transport not configured. Server not started.");
-            return undefined;
+            console.warn("[ScorpionApp] REST transport not configured.");
         }
+        // Start WebSocket server if enabled
+        if (this.get("websocket.enabled")) {
+            const wsConfig = this.get("websocket") || {};
+            try {
+                this.wsServer = await startWebSocketServer(internalApp, wsConfig);
+                console.log("[ScorpionApp] WebSocket server started successfully");
+            }
+            catch (error) {
+                console.error("[ScorpionApp] Error during app.listen while starting WebSocket server:", error);
+                this.wsServer = undefined;
+            }
+        }
+        else {
+            console.log("[ScorpionApp] WebSocket transport not enabled");
+        }
+        return this.httpServer;
     }
     /**
      * Execute a service method with all applicable hooks.

@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as http from 'http';
 import { NotFound, MethodNotAllowed, InternalServerError, BadRequest, ScorpionError } from './errors.js';
 import { startRestServer } from './rest.js';
+import { startWebSocketServer } from './websocket.js';
 import { EventEmitter } from "events";
 import {
   IScorpionApp,
@@ -49,6 +50,7 @@ export class ScorpionApp<
   implements IScorpionAppInternal<AppServices>
 {
   private httpServer?: http.Server;
+  private wsServer?: any; // WebSocket server instance
   _isScorpionAppBrand!: never;
   // A registry for all services, mapping a path to a service instance.
   private _services: Record<string, Service<this>> = {};
@@ -1008,6 +1010,9 @@ export class ScorpionApp<
     port?: number,
     host?: string
   ): Promise<http.Server | undefined> {
+    const internalApp = this as IScorpionAppInternal<AppServices>;
+    
+    // Start REST server if enabled
     if (this.get("rest.enabled")) {
       const restPort =
         port !== undefined
@@ -1017,7 +1022,6 @@ export class ScorpionApp<
         host !== undefined
           ? host
           : (this.get("rest.host") as string | undefined) || "localhost";
-      const internalApp = this as IScorpionAppInternal<AppServices>;
 
       try {
         this.httpServer = await startRestServer(
@@ -1025,21 +1029,43 @@ export class ScorpionApp<
           restPort,
           restHost
         );
-        return this.httpServer;
       } catch (error) {
         console.error(
           "[ScorpionApp] Error during app.listen while starting REST server:",
           error
         );
         this.httpServer = undefined;
-        return undefined; // Propagate that server didn't start
       }
     } else {
       console.warn(
-        "[ScorpionApp] REST transport not configured. Server not started."
+        "[ScorpionApp] REST transport not configured."
       );
-      return undefined;
     }
+
+    // Start WebSocket server if enabled
+    if (this.get("websocket.enabled")) {
+      const wsConfig = this.get("websocket") || {};
+      
+      try {
+        this.wsServer = await startWebSocketServer(internalApp, wsConfig);
+        console.log("[ScorpionApp] WebSocket server started successfully");
+      } catch (error) {
+        console.error(
+          "[ScorpionApp] Error during app.listen while starting WebSocket server:",
+          error
+        );
+        this.wsServer = undefined;
+      }
+    } else {
+      console.log("[ScorpionApp] WebSocket transport not enabled");
+    }
+
+    // Ensure we have at least one transport running
+    if (!this.httpServer && !this.wsServer) {
+      throw new Error("[ScorpionApp] No transports are enabled or started successfully");
+    }
+
+    return this.httpServer;
   }
 
   /**
