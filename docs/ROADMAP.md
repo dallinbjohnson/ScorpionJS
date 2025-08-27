@@ -82,15 +82,32 @@ A developer using ScorpionJS would expect:
         *   [x] Support for event context with additional information.
         *   [x] Automatic event emission for standard and custom methods in executeServiceCall.
 
-    - [x] **10. WebSocket Transport & Real-time Communication:**
+    - [ ] **10. WebSocket Transport & Real-time Communication:**
         *   [x] Integrate a cross-runtime WebSocket solution (e.g., `crossws`).
         *   [x] Implement WebSocket transport for service method calls.
         *   [x] Implement real-time event broadcasting to WebSocket clients.
         *   [x] Add WebSocket transport configuration (port, host, CORS, authentication).
         *   [x] *Ensure transport can dynamically add/remove event listeners when services are registered/unregistered.*
-        *   [ ] *Support for message routing, event filtering, and client-specific event channels.*
-        *   [ ] Implement client-side event subscription.
-        *   [ ] *Advanced message routing: pattern-based event handlers, namespace support for targeted communication.*
+        *   [ ] **Channels System Implementation:**
+            *   [ ] Implement `app.channel(name)` API for creating/accessing channels
+            *   [ ] Implement `channel.join(connection)` and `channel.leave(connection)` methods
+            *   [ ] Add connection lifecycle events (`connection`, `disconnect`, `login`, `logout`)
+            *   [ ] Implement channel filtering with `channel.filter(fn)` method
+            *   [ ] Add `app.channels` property to access all channels
+            *   [ ] Support combined channels with `app.channel(name1, name2, ...nameN)`
+            *   [ ] Implement `channel.send(data)` for custom event data
+            *   [ ] Add `channel.connections` and `channel.length` properties
+        *   [ ] **Event Publishing System:**
+            *   [ ] Implement `app.publish([event,] fn)` for global event publishing
+            *   [ ] Implement `service.publish([event,] fn)` for service-specific publishing
+            *   [ ] Add publisher precedence (service-specific > service-all > app-specific > app-all)
+            *   [ ] Support returning single channel, array of channels, or null from publishers
+            *   [ ] Integrate with existing service event emission system
+        *   [ ] **Advanced Channel Features:**
+            *   [ ] Support dynamic channel creation based on data (e.g., `room-${roomId}`)
+            *   [ ] Implement automatic channel cleanup on connection disconnect
+            *   [ ] Add support for custom events beyond standard service events
+            *   [ ] Pattern-based event handlers and namespace support within channels
   
   - [ ] **11. Streaming Support:**
         *   [ ] Enhance `HookContext` for streaming (`context.stream`, `context.isStream`).

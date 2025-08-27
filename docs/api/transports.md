@@ -248,6 +248,365 @@ When a service method modifies data, ScorpionJS automatically emits events that 
 | `patch` | `serviceName patched` | The patched resource |
 | `remove` | `serviceName removed` | The removed resource |
 
+### Channels & Event Publishing
+
+ScorpionJS provides a powerful channels system for controlling which clients receive specific events. Channels are collections of connections that can be managed dynamically based on authentication, user roles, or custom logic.
+
+## Connections
+
+A connection represents a real-time WebSocket connection. When using authentication, it will contain the authenticated user in `connection.user` once the client has authenticated.
+
+```javascript
+// Access connection in event handlers
+app.on('connection', (connection) => {
+  // Connection object represents the WebSocket connection
+  // After authentication: connection.user will contain user data
+});
+
+app.on('login', (authResult, { connection }) => {
+  // connection.user now contains the authenticated user
+  const user = connection.user;
+});
+```
+
+**Note**: When a connection is terminated, it will be automatically removed from all channels.
+
+## Connection Lifecycle Events
+
+### app.on('connection')
+
+Fired every time a new real-time connection is established. Good place to add connections to anonymous channels:
+
+```javascript
+app.on('connection', (connection) => {
+  // Add new connections to anonymous channel
+  app.channel('anonymous').join(connection);
+});
+```
+
+### app.on('disconnect')
+
+Fired when a real-time connection is disconnected. Connections are automatically removed from all channels:
+
+```javascript
+app.on('disconnect', (connection) => {
+  // Handle custom disconnect logic
+  // Note: connection automatically leaves all channels
+});
+```
+
+### app.on('login')
+
+Fired by the authentication service on successful login:
+
+```javascript
+app.on('login', (authResult, { connection }) => {
+  if (connection) {
+    const { user } = connection;
+    
+    // Remove from anonymous, add to authenticated
+    app.channel('anonymous').leave(connection);
+    app.channel('authenticated').join(connection);
+    
+    // Add to role-specific channels
+    if (user.isAdmin) {
+      app.channel('admins').join(connection);
+    }
+    
+    // Add to user-specific channels (e.g., chat rooms)
+    user.rooms?.forEach(room => {
+      app.channel(`rooms/${room.id}`).join(connection);
+    });
+  }
+});
+```
+
+### app.on('logout')
+
+Fired by the authentication service on successful logout:
+
+```javascript
+app.on('logout', (authResult, { connection }) => {
+  if (connection) {
+    // Connection automatically leaves all channels
+    // Add back to anonymous if needed
+    app.channel('anonymous').join(connection);
+  }
+});
+```
+
+## Channel API
+
+### app.channel(...names)
+
+When given a single name, returns an existing or new named channel:
+
+```javascript
+const adminsChannel = app.channel('admins');
+const authChannel = app.channel('authenticated');
+```
+
+When given multiple names, returns a combined channel containing all connections from the specified channels:
+
+```javascript
+// Combined channel with connections from both channels
+const combined = app.channel('anonymous', 'authenticated');
+
+// Join multiple channels at once
+app.channel('admins', 'moderators').join(connection);
+
+// Leave multiple channels at once  
+app.channel('admins', 'moderators').leave(connection);
+
+// Leave based on condition
+app.channel('admins', 'chat').leave(connection => {
+  return connection.user._id === userId;
+});
+```
+
+### app.channels
+
+Returns an array of all existing channel names:
+
+```javascript
+app.channel('authenticated');
+app.channel('admins', 'users');
+
+console.log(app.channels); // ['authenticated', 'admins', 'users']
+
+// Get channel with all connections
+const allConnections = app.channel(app.channels);
+```
+
+### channel.join(connection)
+
+Adds a connection to the channel. Returns the channel object:
+
+```javascript
+app.on('login', (authResult, { connection }) => {
+  if (connection?.user?.isAdmin) {
+    app.channel('admins').join(connection);
+    // Calling again does nothing
+    app.channel('admins').join(connection);
+  }
+});
+```
+
+### channel.leave(connection|fn)
+
+Removes a connection from the channel. Can accept a connection object or a filter function:
+
+```javascript
+// Remove specific connection
+app.channel('admins').leave(connection);
+
+// Remove based on condition
+app.channel('admins').leave(connection => {
+  return connection.user._id === userId;
+});
+```
+
+### channel.filter(fn)
+
+Returns a new filtered channel based on a condition:
+
+```javascript
+// Get channel with connections for specific user
+const userConnections = app
+  .channel(app.channels)
+  .filter(connection => connection.user._id === userId);
+```
+
+### channel.send(data)
+
+Returns a copy of the channel with custom data for this event:
+
+```javascript
+// Send only name to anonymous users
+app.service('users').publish('created', (data) => {
+  return app.channel('anonymous').send({ name: data.name });
+});
+```
+
+**Data precedence**: 
+1. `channel.send(data)`
+2. `context.dispatch` 
+3. `context.result`
+
+### channel.connections
+
+Array of all connections in the channel:
+
+```javascript
+const connections = app.channel('authenticated').connections;
+```
+
+### channel.length
+
+Total number of connections in the channel:
+
+```javascript
+const count = app.channel('authenticated').length;
+```
+
+## Event Publishing
+
+Publishers are callback functions that determine which channel(s) receive an event. They can be registered at the application and service level for all or specific events.
+
+### service.publish([event,] fn)
+
+Register a publishing function for a specific service:
+
+```javascript
+// Publish all message events to room-specific channels
+app.service('messages').publish((data, context) => {
+  return app.channel(`rooms/${data.roomId}`);
+});
+
+// Publish only 'created' events to admins and the creator
+app.service('users').publish('created', (data, context) => {
+  return [
+    app.channel('admins'),
+    app.channel(app.channels).filter(connection => 
+      connection.user._id === context.params.user._id
+    )
+  ];
+});
+
+// Prevent all events from being published
+app.service('password-reset').publish(() => null);
+```
+
+### app.publish([event,] fn)
+
+Register a publishing function for all services:
+
+```javascript
+// Publish all events to authenticated users
+app.publish((data, context) => {
+  return app.channel('authenticated');
+});
+
+// Publish specific event to all connections
+app.publish('log', (data, context) => {
+  return app.channel(app.channels);
+});
+```
+
+### Publisher Precedence
+
+Publishers are resolved in this order:
+1. Service publisher for specific event
+2. Service publisher for all events  
+3. App publisher for specific event
+4. App publisher for all events
+
+### Publisher Return Values
+
+Publishers can return:
+- **Single channel**: `app.channel('authenticated')`
+- **Array of channels**: `[app.channel('admins'), app.channel('users')]`
+- **null**: Prevent publishing the event
+- **Channel with custom data**: `app.channel('anonymous').send({ name: data.name })`
+
+## Complete Channel Management Example
+
+A typical `channels.js` file implementing comprehensive channel management:
+
+```javascript
+export const channels = (app) => {
+  // Helper functions for channel management
+  const joinChannels = (user, connection) => {
+    app.channel('authenticated').join(connection);
+    
+    // Role-based channels
+    if (user.isAdmin) {
+      app.channel('admins').join(connection);
+    }
+    
+    // User-specific channels (e.g., chat rooms)
+    user.rooms?.forEach(room => {
+      app.channel(`rooms/${room.id}`).join(connection);
+    });
+  };
+
+  const leaveChannels = (user) => {
+    app.channel(app.channels).leave(connection => 
+      connection.user._id === user._id
+    );
+  };
+
+  const updateChannels = (user) => {
+    // Find all connections for this user
+    const { connections } = app.channel(app.channels)
+      .filter(connection => connection.user._id === user._id);
+    
+    // Leave all channels
+    leaveChannels(user);
+    
+    // Re-join with updated user information
+    connections.forEach(connection => joinChannels(user, connection));
+  };
+
+  // Connection lifecycle
+  app.on('connection', (connection) => {
+    app.channel('anonymous').join(connection);
+  });
+
+  app.on('login', (authResult, { connection }) => {
+    if (connection) {
+      app.channel('anonymous').leave(connection);
+      joinChannels(connection.user, connection);
+    }
+  });
+
+  app.on('logout', (authResult, { connection }) => {
+    if (connection) {
+      // Connection automatically leaves all channels
+      app.channel('anonymous').join(connection);
+    }
+  });
+
+  // Keep channels updated when user data changes
+  app.service('users').on('updated', updateChannels);
+  app.service('users').on('patched', updateChannels);
+  app.service('users').on('removed', leaveChannels);
+
+  // Default publishing strategy
+  app.publish((data, context) => {
+    return app.channel('authenticated');
+  });
+};
+```
+
+## Keeping Channels Updated
+
+Since channels should reflect persistent application data, it's important to keep channel memberships synchronized with your database:
+
+- **Don't rely on direct channel subscription requests** - channels are local to each instance
+- **Store channel membership data in your database** (e.g., user.rooms array)
+- **Update channels when data changes** using service events
+- **Handle multiple connections per user** - users can have multiple browser windows/devices
+
+```javascript
+// Example: Update channels when user joins/leaves rooms
+app.service('user-rooms').on('created', ({ userId, roomId }) => {
+  // Find all connections for this user and add to room channel
+  app.channel(app.channels)
+    .filter(connection => connection.user._id === userId)
+    .connections.forEach(connection => {
+      app.channel(`rooms/${roomId}`).join(connection);
+    });
+});
+
+app.service('user-rooms').on('removed', ({ userId, roomId }) => {
+  // Remove user's connections from room channel
+  app.channel(`rooms/${roomId}`).leave(connection => 
+    connection.user._id === userId
+  );
+});
+```
+
 ### Streaming with Sockets
 
 The Socket transport also supports streaming, enabling real-time data flows for large datasets or continuous updates without overwhelming the client or server with large single messages. This aligns with the ScorpionJS principle of universal accessibility for service methods.
