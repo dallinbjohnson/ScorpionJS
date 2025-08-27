@@ -357,19 +357,21 @@ export class WebSocketTransport {
   }
 
   /**
-   * Broadcast service event to subscribed clients
+   * Broadcast service event to all connected clients
+   * TODO: In the future, this could be enhanced with subscription filtering
    */
   private broadcastServiceEvent(servicePath: string, eventName: string, data: any): void {
     const eventKey = `${servicePath} ${eventName}`;
     
     for (const client of this.clients.values()) {
-      if (client.subscriptions.has(eventKey) || client.subscriptions.has(`${servicePath} *`)) {
+      // For now, broadcast to all clients. Future enhancement: subscription filtering
+      // if (client.subscriptions.has(eventKey) || client.subscriptions.has(`${servicePath} *`)) {
         this.sendMessage(client, {
           type: 'event',
           event: eventKey,
           data
         });
-      }
+      // }
     }
   }
 

@@ -195,14 +195,33 @@ describe('WebSocket Transport', () => {
     });
 
     it('should send welcome message on connection', async () => {
-      const ws = await createWebSocketClient(port);
+      // Create a raw WebSocket connection without using the helper
+      // so we can capture the welcome message ourselves
+      const ws = new WebSocket(`ws://localhost:${port}/scorpion`);
       
-      const welcomeMessage = await new Promise<WebSocketMessage>((resolve) => {
-        ws.on('message', (data) => {
-          const message: WebSocketMessage = JSON.parse(data.toString());
-          if (message.type === 'event' && message.event === 'connected') {
-            resolve(message);
-          }
+      const welcomeMessage = await new Promise<WebSocketMessage>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Welcome message timeout'));
+        }, 2000);
+
+        ws.on('open', () => {
+          // Listen for the welcome message after connection is established
+          ws.on('message', (data) => {
+            try {
+              const message: WebSocketMessage = JSON.parse(data.toString());
+              if (message.type === 'event' && message.event === 'connected') {
+                clearTimeout(timeout);
+                resolve(message);
+              }
+            } catch (error) {
+              // Ignore parsing errors for other messages
+            }
+          });
+        });
+
+        ws.on('error', (error) => {
+          clearTimeout(timeout);
+          reject(error);
         });
       });
 
@@ -615,10 +634,6 @@ describe('WebSocket Transport', () => {
         method: 'find'
       });
 
-      // Debug: log the response if it's an error
-      if (response.type === 'error') {
-        console.log('Dynamic service test error:', response.error);
-      }
 
       expect(response.type).to.equal('response');
       expect(response.result).to.be.an('array');
@@ -636,8 +651,6 @@ describe('WebSocket Transport', () => {
         method: 'find'
       });
 
-      // Debug: log the actual error message
-      console.log('Service removal test error:', response.error);
 
       expect(response.type).to.equal('error');
       expect(response.error).to.have.property('message');
