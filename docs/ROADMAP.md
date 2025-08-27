@@ -82,13 +82,13 @@ A developer using ScorpionJS would expect:
         *   [x] Support for event context with additional information.
         *   [x] Automatic event emission for standard and custom methods in executeServiceCall.
 
-    - [ ] **10. WebSocket Transport & Real-time Communication:**
-        *   [ ] Integrate a cross-runtime WebSocket solution (e.g., `crossws`).
-        *   [ ] Implement WebSocket transport for service method calls.
-        *   [ ] Implement real-time event broadcasting to WebSocket clients.
-        *   [ ] Add WebSocket transport configuration (port, host, CORS, authentication).
-        *   [ ] Ensure transport can dynamically add/remove event listeners when services are registered/unregistered.*
-        *   [ ] Support for message routing, event filtering, and client-specific event channels.*
+    - [x] **10. WebSocket Transport & Real-time Communication:**
+        *   [x] Integrate a cross-runtime WebSocket solution (e.g., `crossws`).
+        *   [x] Implement WebSocket transport for service method calls.
+        *   [x] Implement real-time event broadcasting to WebSocket clients.
+        *   [x] Add WebSocket transport configuration (port, host, CORS, authentication).
+        *   [x] *Ensure transport can dynamically add/remove event listeners when services are registered/unregistered.*
+        *   [ ] *Support for message routing, event filtering, and client-specific event channels.*
         *   [ ] Implement client-side event subscription.
         *   [ ] *Advanced message routing: pattern-based event handlers, namespace support for targeted communication.*
   
