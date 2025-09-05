@@ -4,6 +4,7 @@ import { Readable, Writable } from "stream";
 import { createRouter } from "rou3";
 import { ScorpionError } from './errors.js';
 import { ParsedQs } from 'qs';
+import type { Peer } from 'crossws';
 
 /**
  * Configuration options for creating a ScorpionJS application
@@ -218,6 +219,25 @@ export interface IScorpionApp<AppServices extends Record<string, Service<any>> =
   emit(event: string | symbol, ...args: any[]): boolean;
   on(event: string | symbol, listener: (...args: any[]) => void): this;
   off(event: string | symbol, listener: (...args: any[]) => void): this;
+
+  // Channel management methods
+  channel(name: string): Channel;
+  channel(...names: string[]): Channel;
+  readonly channels: string[];
+
+  // Event publishing methods
+  publish(publisherFn: PublisherFunction): this;
+  publish(event: string, publisherFn: PublisherFunction): this;
+
+  // Connection lifecycle methods
+  handleConnection(connection: Connection): void;
+  handleDisconnect(connection: Connection): void;
+  handleLogin(connection: Connection, user: any): void;
+  handleLogout(connection: Connection): void;
+
+  // Internal access methods
+  getChannelManager(): ChannelManager;
+  getPublisherRegistry(): any; // PublisherRegistry type
 }
 
 /**
@@ -280,6 +300,10 @@ export interface Service<A extends IScorpionApp<any> = IScorpionApp<any>, T = an
   // Hook configuration method for registering service-specific hooks
   hooks?(config: HooksApiConfig<IScorpionApp<any>, Service<IScorpionApp<any>>>): this;
   
+  // Event publishing methods for services
+  publish?(publisherFn: PublisherFunction): this;
+  publish?(event: string, publisherFn: PublisherFunction): this;
+  
   // Standard methods - all optional
   find?(params?: Params): Promise<T[] | any>;
   get?(id: string | number, params?: Params): Promise<T | any>;
@@ -303,6 +327,8 @@ export type RegisteredService<A extends IScorpionApp<any> = IScorpionApp<any>, S
   emit(event: string, data: any, context?: any): RegisteredService<A, S>;
   on(event: string, listener: (...args: any[]) => void): RegisteredService<A, S>;
   off(event: string, listener: (...args: any[]) => void): RegisteredService<A, S>;
+  publish(publisherFn: PublisherFunction): RegisteredService<A, S>;
+  publish(event: string, publisherFn: PublisherFunction): RegisteredService<A, S>;
 }
 
 /**
@@ -419,4 +445,65 @@ export interface ScorpionRouteData {
   serviceMethodName: string; // e.g., 'find', 'create', 'customMethod'
   service: Service<any>;
   allowStream?: boolean;
+}
+
+// ===== CHANNELS SYSTEM TYPES =====
+
+/**
+ * Represents a real-time WebSocket connection
+ */
+export interface Connection {
+  id: string;
+  peer: Peer;
+  user?: any; // Set after authentication
+  [key: string]: any; // Allow additional connection metadata
+}
+
+/**
+ * Filter function for connections
+ */
+export type ConnectionFilter = (connection: Connection) => boolean;
+
+/**
+ * Publisher function that determines which channels receive an event
+ */
+export type PublisherFunction = (
+  data: any,
+  context: HookContext<any, any>
+) => Channel | Channel[] | null | undefined;
+
+/**
+ * Channel interface for managing groups of connections
+ */
+export interface Channel {
+  readonly name: string;
+  readonly connections: Connection[];
+  readonly length: number;
+  
+  join(connection: Connection): Channel;
+  leave(connection: Connection | ConnectionFilter): Channel;
+  filter(filterFn: ConnectionFilter): Channel;
+  send(data: any): Channel;
+}
+
+/**
+ * Internal channel implementation interface
+ */
+export interface ChannelImpl extends Channel {
+  _connections: Set<Connection>;
+  _customData?: any;
+  addConnection(connection: Connection): void;
+  removeConnection(connection: Connection): void;
+  removeConnections(filterFn: ConnectionFilter): void;
+  hasConnection(connection: Connection): boolean;
+}
+
+/**
+ * Channel manager interface for the app
+ */
+export interface ChannelManager {
+  getChannel(name: string): Channel;
+  getCombinedChannel(names: string[]): Channel;
+  getAllChannelNames(): string[];
+  removeConnection(connection: Connection): void;
 }

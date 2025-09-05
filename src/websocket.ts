@@ -11,6 +11,9 @@ import {
   Service,
   HookContext,
   WebSocketTransportConfig,
+  Connection,
+  Channel,
+  PublisherFunction,
 } from "./types.js";
 import { ScorpionError, BadRequest, NotFound, InternalServerError } from "./errors.js";
 
@@ -33,10 +36,8 @@ export interface WebSocketMessage {
   result?: any;
 }
 
-// Client connection wrapper
-interface WebSocketClient {
-  peer: Peer;
-  id: string;
+// Client connection wrapper that implements the Connection interface
+interface WebSocketClient extends Connection {
   subscriptions: Set<string>; // Event subscriptions
   pendingRequests: Map<string, { resolve: Function; reject: Function }>; // For request/response tracking
 }
@@ -192,11 +193,15 @@ export class WebSocketTransport {
       peer,
       id: clientId,
       subscriptions: new Set(),
-      pendingRequests: new Map()
+      pendingRequests: new Map(),
+      user: undefined // Will be set during authentication
     };
 
     this.clients.set(clientId, client);
     console.log(`[Scorpion WebSocket] Client ${clientId} connected`);
+
+    // Integrate with app's connection lifecycle
+    this.app.handleConnection(client);
 
     // Send welcome message
     this.sendMessage(client, {
@@ -243,6 +248,10 @@ export class WebSocketTransport {
     const client = Array.from(this.clients.values()).find(c => c.peer === peer);
     if (client) {
       console.log(`[Scorpion WebSocket] Client ${client.id} disconnected`);
+      
+      // Integrate with app's connection lifecycle
+      this.app.handleDisconnect(client);
+      
       this.clients.delete(client.id);
     }
   }
@@ -357,21 +366,66 @@ export class WebSocketTransport {
   }
 
   /**
-   * Broadcast service event to all connected clients
-   * TODO: In the future, this could be enhanced with subscription filtering
+   * Broadcast service event using the channels system with publishers
    */
   private broadcastServiceEvent(servicePath: string, eventName: string, data: any): void {
     const eventKey = `${servicePath} ${eventName}`;
     
+    // Get the publisher function for this service event
+    const publisherRegistry = this.app.getPublisherRegistry();
+    const publisher = publisherRegistry.getPublisher(servicePath, eventName);
+    
+    if (publisher) {
+      // Use publisher to determine which channels should receive the event
+      const hookContext = {
+        app: this.app,
+        service: this.app.services[servicePath] || undefined,
+        method: eventName,
+        data: data,
+        params: {},
+        result: data
+      };
+      
+      try {
+        const channels = publisher(data, hookContext);
+        if (channels) {
+          const channelArray = Array.isArray(channels) ? channels : [channels];
+          
+          // Send event to all connections in the specified channels
+          for (const channel of channelArray) {
+            for (const connection of channel.connections) {
+              const client = this.clients.get(connection.id);
+              if (client) {
+                this.sendMessage(client, {
+                  type: 'event',
+                  event: eventKey,
+                  data
+                });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`[Scorpion WebSocket] Error in publisher for ${eventKey}:`, error);
+        // Fallback to broadcasting to all clients
+        this.broadcastToAllClients(eventKey, data);
+      }
+    } else {
+      // No publisher defined, broadcast to all clients (default behavior)
+      this.broadcastToAllClients(eventKey, data);
+    }
+  }
+
+  /**
+   * Fallback method to broadcast to all clients
+   */
+  private broadcastToAllClients(eventKey: string, data: any): void {
     for (const client of this.clients.values()) {
-      // For now, broadcast to all clients. Future enhancement: subscription filtering
-      // if (client.subscriptions.has(eventKey) || client.subscriptions.has(`${servicePath} *`)) {
-        this.sendMessage(client, {
-          type: 'event',
-          event: eventKey,
-          data
-        });
-      // }
+      this.sendMessage(client, {
+        type: 'event',
+        event: eventKey,
+        data
+      });
     }
   }
 

@@ -34,11 +34,16 @@ import {
   BodyParserUrlencodedOptions,
   BodyParserTextOptions,
   BodyParserRawOptions,
-  CompressionOptions
+  CompressionOptions,
+  Channel,
+  Connection,
+  PublisherFunction,
+  ChannelManager
 } from "./types.js";
 import { runHooks } from './hooks.js';
 import { createRouter, addRoute, findRoute, removeRoute } from "rou3";
 import { validateSchema, registerSchemas } from "./schema.js";
+import { ChannelManagerImplementation, PublisherRegistry } from './channels.js';
 
 export class ScorpionApp<
     AppServices extends Record<string, Service<any>> = Record<
@@ -75,6 +80,10 @@ export class ScorpionApp<
 
   // Configuration system
   private _config: ScorpionConfig = {};
+
+  // Channels system
+  private _channelManager: ChannelManager = new ChannelManagerImplementation();
+  private _publisherRegistry: PublisherRegistry = new PublisherRegistry();
 
   constructor(config: ScorpionConfig = {}) {
     super(); // Call EventEmitter constructor
@@ -582,6 +591,21 @@ export class ScorpionApp<
       return serviceProxy; // Ensure hooks method returns the service proxy for chaining/type compatibility
     }; // End of serviceProxy.hooks definition
 
+    // Add publish method to the service
+    (serviceProxy as any).publish = (
+      eventOrFn: string | PublisherFunction,
+      fn?: PublisherFunction
+    ) => {
+      if (typeof eventOrFn === 'function') {
+        // service.publish(fn)
+        this._publisherRegistry.setServicePublisher(path, null, eventOrFn);
+      } else if (typeof eventOrFn === 'string' && typeof fn === 'function') {
+        // service.publish(event, fn)
+        this._publisherRegistry.setServicePublisher(path, eventOrFn, fn);
+      }
+      return serviceProxy;
+    };
+
     // Register routes for all service methods (standard and custom)
     // Use actualService to get all methods, including those from the prototype chain
     const actualService = service; // Use the original service instance passed to app.use
@@ -757,6 +781,9 @@ export class ScorpionApp<
       }
       delete this.serviceEventListeners[path];
     }
+
+    // Clean up service-specific publishers
+    this._publisherRegistry.removeServicePublishers(path);
 
     // Store the raw service instance to be returned
     const removedService = rawService;
@@ -1230,19 +1257,6 @@ export class ScorpionApp<
     );
   }
 
-  /**
-   * Publish an event with data and optional context using the app's custom event signature.
-   * This is distinct from the standard EventEmitter.emit method.
-   *
-   * @param event The event name
-   * @param data The event data
-   * @param context Optional context information
-   * @returns The app instance for chaining
-   */
-  public publish(event: string, data: any, context?: any): this {
-    this.emit(event, data, context);
-    return this;
-  }
 
   /**
    * Helper method to build a route path from a service path and segment.
@@ -1291,6 +1305,130 @@ export class ScorpionApp<
     }
 
     return false;
+  }
+
+  // Channel management methods
+  
+  /**
+   * Get or create a channel by name
+   * @param name The channel name
+   * @returns The channel instance
+   */
+  public channel(name: string): Channel {
+    return this._channelManager.getChannel(name);
+  }
+
+  /**
+   * Get all channel names
+   * @returns Array of channel names
+   */
+  public get channels(): string[] {
+    return this._channelManager.getAllChannelNames();
+  }
+
+  /**
+   * Register a publisher function for an event
+   * @param publisherFn The publisher function
+   * @returns This app instance for chaining
+   */
+  public publish(publisherFn: PublisherFunction): this;
+  /**
+   * Register a publisher function for a specific event
+   * @param event The event name or pattern
+   * @param publisherFn The publisher function
+   * @returns This app instance for chaining
+   */
+  public publish(event: string, publisherFn: PublisherFunction): this;
+  public publish(eventOrPublisher: string | PublisherFunction, publisherFn?: PublisherFunction): this {
+    if (typeof eventOrPublisher === 'function') {
+      // First overload: publish(publisherFn) - register for all events
+      this._publisherRegistry.setAppPublisher(null, eventOrPublisher);
+    } else {
+      // Second overload: publish(event, publisherFn)
+      this._publisherRegistry.setAppPublisher(eventOrPublisher, publisherFn!);
+    }
+    return this;
+  }
+
+  /**
+   * Get the channel manager instance (for internal use)
+   * @returns The channel manager
+   */
+  public getChannelManager(): ChannelManager {
+    return this._channelManager;
+  }
+
+  /**
+   * Get the publisher registry instance (for internal use)
+   * @returns The publisher registry
+   */
+  public getPublisherRegistry(): PublisherRegistry {
+    return this._publisherRegistry;
+  }
+
+  // Connection lifecycle event handlers
+  
+  /**
+   * Handle new WebSocket connection
+   * @param connection The new connection
+   */
+  public handleConnection(connection: Connection): void {
+    // Emit connection event for app-level listeners
+    this.emit('connection', connection);
+    
+    // Auto-join anonymous channel for all connections
+    this._channelManager.getChannel('anonymous').join(connection);
+  }
+
+  /**
+   * Handle WebSocket disconnection
+   * @param connection The disconnecting connection
+   */
+  public handleDisconnect(connection: Connection): void {
+    // Remove connection from all channels
+    this._channelManager.removeConnection(connection);
+    
+    // Emit disconnect event for app-level listeners
+    this.emit('disconnect', connection);
+  }
+
+  /**
+   * Handle user login (authentication)
+   * @param connection The connection being authenticated
+   * @param user The authenticated user data
+   */
+  public handleLogin(connection: Connection, user: any): void {
+    // Set user on connection
+    connection.user = user;
+    
+    // Remove from anonymous channel
+    this._channelManager.getChannel('anonymous').leave(connection);
+    
+    // Join authenticated channel
+    this._channelManager.getChannel('authenticated').join(connection);
+    
+    // Emit login event for app-level listeners
+    this.emit('login', connection, user);
+  }
+
+  /**
+   * Handle user logout
+   * @param connection The connection being logged out
+   */
+  public handleLogout(connection: Connection): void {
+    const user = connection.user;
+    
+    // Clear user from connection
+    connection.user = undefined;
+    
+    // Remove from authenticated channel
+    this._channelManager.getChannel('authenticated').leave(connection);
+    
+    // Re-join anonymous channel
+    this._channelManager.getChannel('anonymous').join(connection);
+    
+    // Emit logout event for app-level listeners
+    this.emit('logout', connection, user);
   }
 }
 

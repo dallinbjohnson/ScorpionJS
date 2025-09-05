@@ -88,24 +88,19 @@ A developer using ScorpionJS would expect:
         *   [x] Implement real-time event broadcasting to WebSocket clients.
         *   [x] Add WebSocket transport configuration (port, host, CORS, authentication).
         *   [x] *Ensure transport can dynamically add/remove event listeners when services are registered/unregistered.*
-        *   [ ] **Channels System Implementation:**
-            *   [ ] Implement `app.channel(name)` API for creating/accessing channels
-            *   [ ] Implement `channel.join(connection)` and `channel.leave(connection)` methods
-            *   [ ] Add connection lifecycle events (`connection`, `disconnect`, `login`, `logout`)
-            *   [ ] Implement channel filtering with `channel.filter(fn)` method
-            *   [ ] Add `app.channels` property to access all channels
-            *   [ ] Support combined channels with `app.channel(name1, name2, ...nameN)`
-            *   [ ] Implement `channel.send(data)` for custom event data
-            *   [ ] Add `channel.connections` and `channel.length` properties
-        *   [ ] **Event Publishing System:**
-            *   [ ] Implement `app.publish([event,] fn)` for global event publishing
-            *   [ ] Implement `service.publish([event,] fn)` for service-specific publishing
-            *   [ ] Add publisher precedence (service-specific > service-all > app-specific > app-all)
-            *   [ ] Support returning single channel, array of channels, or null from publishers
-            *   [ ] Integrate with existing service event emission system
-        *   [ ] **Advanced Channel Features:**
-            *   [ ] Support dynamic channel creation based on data (e.g., `room-${roomId}`)
-            *   [ ] Implement automatic channel cleanup on connection disconnect
+        *   [x] **Channels System & Event Publishing:**
+            *   [x] Implement `app.channel(name)` API for creating/accessing channels.
+            *   [x] Support combined channels with `app.channel(name1, name2, ...nameN)`.
+            *   [x] Add `app.channels` property to list all channel names.
+            *   [x] Implement `channel.join(connection)` and `channel.leave(connection)` methods.
+            *   [x] Implement channel filtering with `channel.filter(fn)`.
+            *   [x] Add `channel.connections` and `channel.length` properties.
+            *   [ ] Implement `channel.send(data)` for sending custom event data.
+            *   [x] Add connection lifecycle events (`connection`, `disconnect`, `login`, `logout`).
+            *   [x] Implement `app.publish([event,] fn)` for global event publishing with precedence.
+            *   [ ] Implement `service.publish([event,] fn)` for service-specific publishing.
+            *   [x] Support returning single/multiple channels or null from publishers.
+            *   [x] Implement automatic channel cleanup on connection disconnect.
             *   [ ] Add support for custom events beyond standard service events
             *   [ ] Pattern-based event handlers and namespace support within channels
   
